@@ -1,0 +1,55 @@
+name: Supabase Deploy
+
+# Manual-only: run from the Actions tab. Never fires on push.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      # Read by `link`/`db push` for non-interactive auth (documented CI mechanism)
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kgvsfxtfylqgvlppavvb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Push database migrations
+        run: supabase db push
+
+      # verify_jwt per function comes from supabase/config.toml:
+      # chat = true; contact and data-request = false (public forms).
+      - name: Deploy Edge Function - chat
+        run: supabase functions deploy chat --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy Edge Function - contact
+        run: supabase functions deploy contact --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy Edge Function - data-request
+        run: supabase functions deploy data-request --project-ref "$SUPABASE_PROJECT_REF"
+
+      # Only non-reserved secrets: SUPABASE_URL / SUPABASE_ANON_KEY /
+      # SUPABASE_SERVICE_ROLE_KEY are injected by the Edge runtime, and the
+      # CLI rejects SUPABASE_-prefixed names.
+      - name: Set Vault secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
+        run: |
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
+            ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+            ALLOWED_EMAILS="$ALLOWED_EMAILS"

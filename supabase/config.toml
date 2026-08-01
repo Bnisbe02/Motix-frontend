@@ -1,0 +1,18 @@
+project_id = "motix-frontend"
+
+# Per-function JWT verification at the API gateway.
+# chat: invoked with the signed-in user's session token; the function also
+#   re-validates the user and applies the ALLOWED_EMAILS allowlist itself.
+# contact / data-request: called by unauthenticated site visitors (public
+#   contact form, GDPR data request) with no user JWT — gateway verification
+#   must be off or every submission 401s. Both functions validate input and
+#   restrict CORS origins internally.
+
+[functions.chat]
+verify_jwt = true
+
+[functions.contact]
+verify_jwt = false
+
+[functions.data-request]
+verify_jwt = false

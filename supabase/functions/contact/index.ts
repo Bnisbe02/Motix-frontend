@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 // Origins allowed to call this function. Configure the production domain(s) via
 // the ALLOWED_ORIGINS secret (comma-separated) so requests from the live site
@@ -21,9 +22,22 @@ const ALLOWED_ORIGINS = [
 const NOTIFICATION_EMAIL =
   Deno.env.get("CONTACT_NOTIFICATION_EMAIL") ?? "beats@fibrecast.com.au";
 
-// Verified Resend sender. Must be on a domain verified in Resend.
+// Envelope "from" address for the notification. Many providers require this to
+// match the authenticated SMTP account (SMTP_USER). Override with CONTACT_FROM_EMAIL.
 const FROM_EMAIL =
-  Deno.env.get("CONTACT_FROM_EMAIL") ?? "MOTIX Website <noreply@fibrecast.com.au>";
+  Deno.env.get("CONTACT_FROM_EMAIL") ?? Deno.env.get("SMTP_USER") ?? "noreply@fibrecast.com.au";
+
+// SMTP connection settings (provider-agnostic). Set these as Supabase secrets:
+//   SMTP_HOST  - e.g. smtp.gmail.com | smtp.office365.com | mail.your-host.com
+//   SMTP_PORT  - 465 (implicit TLS, default) or 587 (STARTTLS)
+//   SMTP_USER  - full mailbox / login
+//   SMTP_PASS  - app password (recommended) or mailbox password
+//   SMTP_TLS   - "true" (default) for port 465; set "false" for 587/STARTTLS
+const SMTP_HOST = Deno.env.get("SMTP_HOST") ?? "";
+const SMTP_PORT = Number(Deno.env.get("SMTP_PORT") ?? "465");
+const SMTP_USER = Deno.env.get("SMTP_USER") ?? "";
+const SMTP_PASS = Deno.env.get("SMTP_PASS") ?? "";
+const SMTP_TLS = (Deno.env.get("SMTP_TLS") ?? "true").toLowerCase() !== "false";
 
 const getCorsHeaders = (origin: string | null) => {
   const allowedOrigin =
@@ -51,16 +65,15 @@ const escapeHtml = (value: string): string =>
     .replace(/'/g, "&#39;");
 
 /**
- * Send the enquiry notification to the MOTIX inbox via Resend.
+ * Send the enquiry notification to the MOTIX inbox over SMTP.
  * Returns true on success. Never throws — a delivery failure must not lose the
  * enquiry, which is already persisted in contact_submissions.
  */
 const sendNotificationEmail = async (data: ContactFormData): Promise<boolean> => {
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
-  if (!resendApiKey) {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     console.error(
-      "RESEND_API_KEY not configured - enquiry stored but no email sent. " +
-        "Set the secret with: supabase secrets set RESEND_API_KEY=...",
+      "SMTP not configured - enquiry stored but no email sent. Set the secrets: " +
+        "supabase secrets set SMTP_HOST=... SMTP_USER=... SMTP_PASS=...",
     );
     return false;
   }
@@ -83,33 +96,37 @@ const sendNotificationEmail = async (data: ContactFormData): Promise<boolean> =>
     `Company: ${company}\n\n` +
     `Message:\n${message}\n`;
 
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
+  const client = new SMTPClient({
+    connection: {
+      hostname: SMTP_HOST,
+      port: SMTP_PORT,
+      tls: SMTP_TLS,
+      auth: {
+        username: SMTP_USER,
+        password: SMTP_PASS,
       },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [NOTIFICATION_EMAIL],
-        reply_to: email,
-        subject: `New MOTIX enquiry from ${name}${company ? ` (${company})` : ""}`,
-        html,
-        text,
-      }),
+    },
+  });
+
+  try {
+    await client.send({
+      from: FROM_EMAIL,
+      to: NOTIFICATION_EMAIL,
+      replyTo: email,
+      subject: `New MOTIX enquiry from ${name}${company ? ` (${company})` : ""}`,
+      content: text,
+      html,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`Resend API error (${response.status}): ${body}`);
-      return false;
-    }
-
     return true;
   } catch (error) {
-    console.error("Failed to send notification email:", error);
+    console.error("Failed to send notification email over SMTP:", error);
     return false;
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      // ignore close errors
+    }
   }
 };
 

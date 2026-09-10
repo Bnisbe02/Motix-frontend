@@ -29,18 +29,28 @@ Edge Functions (see comments in `supabase/functions/*/index.ts`).
 ### Edge Function secrets (contact form)
 
 The `contact` function persists every enquiry to the `contact_submissions`
-table **and** emails it to the MOTIX inbox via [Resend](https://resend.com).
-Set these with `supabase secrets set KEY=value`:
+table **and** emails it to the MOTIX inbox over SMTP (using your own mailbox —
+no third-party email service). Set these with `supabase secrets set KEY=value`:
 
 | Secret | Required | Purpose |
 |---|---|---|
-| `RESEND_API_KEY` | yes (for email) | Resend API key. Without it enquiries are still stored, but no email is sent. |
+| `SMTP_HOST` | yes (for email) | SMTP server, e.g. `smtp.gmail.com` (Google Workspace), `smtp.office365.com` (Microsoft 365), or your host's mail server. |
+| `SMTP_PORT` | no | `465` for implicit TLS (default) or `587` for STARTTLS. |
+| `SMTP_USER` | yes (for email) | Full mailbox / SMTP login. |
+| `SMTP_PASS` | yes (for email) | App password (recommended) or mailbox password. |
+| `SMTP_TLS` | no | `true` (default, for port 465). Set `false` when using port 587/STARTTLS. |
 | `CONTACT_NOTIFICATION_EMAIL` | no | Inbox that receives enquiries. Defaults to `beats@fibrecast.com.au`. |
-| `CONTACT_FROM_EMAIL` | no | Verified Resend sender. Defaults to `MOTIX Website <noreply@fibrecast.com.au>` — the sending domain must be verified in Resend. |
+| `CONTACT_FROM_EMAIL` | no | Envelope `from` address. Defaults to `SMTP_USER`. Most providers require it to match the authenticated account. |
 | `ALLOWED_ORIGINS` | yes (production) | Comma-separated list of the live site origin(s), e.g. `https://motix.fibrecast.com.au`. Localhost is always allowed. Required by both `contact` and `data-request`, otherwise browser CORS blocks the form in production. |
 
-The enquirer's address is set as the email `reply-to`, so you can reply to a
-lead directly from your inbox.
+Without the SMTP secrets, enquiries are still stored in the database; only the
+email notification is skipped (and the failure is logged). The enquirer's
+address is set as the email `reply-to`, so you can reply to a lead directly
+from your inbox.
+
+**Google Workspace / Gmail note:** generate an [App Password](https://myaccount.google.com/apppasswords)
+(requires 2-Step Verification) and use it as `SMTP_PASS` with
+`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`.
 
 ## Commands
 

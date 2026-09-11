@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, User, Folder, FileText, MessageSquare, ChevronDown, Menu, X } from 'lucide-react';
+import { LogOut, User, Folder, FileText, MessageSquare, ChevronDown, Menu, X, Palette } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useFeedStatus } from '../hooks/useFeedStatus';
 import { useToast } from '../contexts/ToastContext';
@@ -77,6 +77,7 @@ export default function AppHeader() {
     { path: '/app/campaigns', icon: Folder, label: 'Campaigns' },
     { path: '/app/report', icon: FileText, label: 'Reports' },
     { path: '/app/chat', icon: MessageSquare, label: 'Chat Search' },
+    { path: '/app/settings/brand', icon: Palette, label: 'Brand kit' },
   ];
 
   return (

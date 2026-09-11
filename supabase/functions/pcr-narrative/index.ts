@@ -23,10 +23,20 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const ALLOWED_ORIGINS = [
+const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:4173",
-  "https://your-production-domain.netlify.app", // Replace with actual production domain
+];
+
+// Production origins come from the ALLOWED_ORIGINS secret (comma-separated),
+// the same mechanism the contact / data-request functions use, so a deployed
+// frontend is not blocked by CORS.
+const ALLOWED_ORIGINS = [
+  ...DEFAULT_ALLOWED_ORIGINS,
+  ...(Deno.env.get("ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0),
 ];
 
 const getCorsHeaders = (origin: string | null) => {

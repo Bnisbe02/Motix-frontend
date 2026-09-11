@@ -62,6 +62,10 @@ export async function buildPptx(
   const headingFont = kit.heading_font || 'Montserrat';
   const bodyFont = kit.body_font || 'Calibri';
   const narrative = opts.narrative ?? null;
+  // Sample data must be disclosed throughout the deck so a downloaded report is
+  // never mistaken for live, verified figures.
+  const sample = model.gaps.sampleData === true;
+  const SAMPLE_TEXT = 'SAMPLE DATA — not live-verified';
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 x 7.5 in, 16:9
@@ -95,9 +99,14 @@ export async function buildPptx(
     `${model.meta.advertiser}  ·  ${model.meta.dateFrom} – ${model.meta.dateTo}`,
     { x: 0.6, y: 5.9, w: 12, h: 0.5, fontFace: bodyFont, fontSize: 16, color: onPrimary },
   );
-  cover.addText('Post-Campaign Report · Verified by MOTIX', {
+  cover.addText(sample ? 'Post-Campaign Report · Sample data (not live-verified)' : 'Post-Campaign Report · Verified by MOTIX', {
     x: 0.6, y: 6.9, w: 12, h: 0.4, fontFace: bodyFont, fontSize: 11, color: onPrimary, transparency: 25,
   });
+  if (sample) {
+    // Prominent top-of-cover disclosure band.
+    cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: '100%', h: 0.5, fill: { color: accent } });
+    cover.addText(SAMPLE_TEXT, { x: 0, y: 0, w: '100%', h: 0.5, align: 'center', valign: 'middle', fontFace: bodyFont, fontSize: 13, bold: true, color: 'FFFFFF' });
+  }
   cover.addNotes(
     `Brand fonts: heading "${headingFont}", body "${bodyFont}". PowerPoint substitutes a similar font if these are not installed on the viewer's machine.`
   );
@@ -120,7 +129,10 @@ export async function buildPptx(
   if (b.hasObserved || b.hasAired || b.hasBooked) {
     const s = pptx.addSlide();
     addHeading(s, 'Broadcast delivery', { headingFont, primary, accent, pptx });
-    if (narrative?.sections?.broadcast) addCaption(s, narrative.sections.broadcast, bodyFont);
+    const bCaption = [sample ? 'Sample data — no live feed connected.' : '', narrative?.sections?.broadcast ?? '']
+      .filter((t) => t !== '')
+      .join('  ');
+    if (bCaption) addCaption(s, bCaption, bodyFont);
 
     // Native table of the network total by daypart.
     const cols: Array<{ key: 'observed' | 'aired' | 'booked'; label: string }> = [];
@@ -158,23 +170,21 @@ export async function buildPptx(
     });
   }
 
-  // Paid vs bonus grouped columns, only where the plan/log classified spots.
-  const classDayparts = b.total.rows.filter((r) => r.airedClass || r.bookedClass);
-  const hasClass = classDayparts.some(
-    (r) => (r.airedClass && r.airedClass.paid + r.airedClass.bonus > 0) || (r.bookedClass && r.bookedClass.paid + r.bookedClass.bonus > 0)
-  );
-  if (hasClass) {
+  // Paid vs bonus grouped columns, summing the classification from whichever
+  // source(s) supplied it per daypart (aired and/or booked), so a daypart with
+  // only booked classification is not charted as zeros.
+  const paidOf = (r: (typeof b.total.rows)[number]): number => (r.airedClass?.paid ?? 0) + (r.bookedClass?.paid ?? 0);
+  const bonusOf = (r: (typeof b.total.rows)[number]): number => (r.airedClass?.bonus ?? 0) + (r.bookedClass?.bonus ?? 0);
+  const classDayparts = b.total.rows.filter((r) => paidOf(r) + bonusOf(r) > 0);
+  if (classDayparts.length > 0) {
     const s = pptx.addSlide();
     addHeading(s, 'Paid vs bonus', { headingFont, primary, accent, pptx });
     const labels = classDayparts.map((r) => r.daypart);
-    const source = b.hasAired ? 'airedClass' : 'bookedClass';
-    const paid = classDayparts.map((r) => r[source as 'airedClass']?.paid ?? 0);
-    const bonus = classDayparts.map((r) => r[source as 'airedClass']?.bonus ?? 0);
     s.addChart(
       pptx.ChartType.bar,
       [
-        { name: 'Paid', labels, values: paid },
-        { name: 'Bonus', labels, values: bonus },
+        { name: 'Paid', labels, values: classDayparts.map(paidOf) },
+        { name: 'Bonus', labels, values: classDayparts.map(bonusOf) },
       ],
       { x: 0.6, y: 1.9, w: 12, h: 4.6, barDir: 'col', barGrouping: 'clustered', chartColors: [primary, secondary], showLegend: true, legendPos: 'b' }
     );
@@ -254,6 +264,18 @@ export async function buildPptx(
       });
     }
 
+    // State split, when the line carries one (podcast/streaming/display).
+    if (line.stateSplit.length > 0) {
+      const rows = [
+        [cell('State', { bold: true, color: onPrimary, fill: primary }), cell('%', { bold: true, color: onPrimary, fill: primary, align: 'right' })],
+        ...line.stateSplit.map((sp, i) => {
+          const f = i % 2 === 1 ? secondary + ':20' : 'FFFFFF';
+          return [cell(sp.state, { fill: f }), cell(`${sp.percent}%`, { align: 'right', fill: f })];
+        }),
+      ];
+      s.addTable(rows, { x: 0.6, y: 4.7, w: 3.2, fontFace: bodyFont, fontSize: 10, border: { type: 'solid', pt: 0.5, color: 'DDDDDD' } });
+    }
+
     // Screenshot, if attached and resolvable.
     const shotUrl = await resolveImage(opts.assetResolver, line.screenshotPaths[0]);
     if (shotUrl) {
@@ -303,7 +325,7 @@ export async function buildPptx(
     end.addImage({ ...imageProp(u), x: 5.5, y: 2.2, w: 2.3, h: 1.0, sizing: { type: 'contain', w: 2.3, h: 1.0 } });
   }
   end.addText('Thank you', { x: 0, y: 3.4, w: '100%', h: 1, align: 'center', fontFace: headingFont, fontSize: 40, bold: true, color: onPrimary });
-  end.addText('Verified by MOTIX', { x: 0, y: 4.5, w: '100%', h: 0.5, align: 'center', fontFace: bodyFont, fontSize: 14, color: onPrimary, transparency: 20 });
+  end.addText(sample ? 'Sample data — not live-verified' : 'Verified by MOTIX', { x: 0, y: 4.5, w: '100%', h: 0.5, align: 'center', fontFace: bodyFont, fontSize: 14, color: onPrimary, transparency: 20 });
 
   return pptx;
 }
@@ -371,7 +393,12 @@ function prettyKey(k: string): string {
 }
 
 function hasAnyMetric(line: MediaLineBlock): boolean {
-  return Object.keys(line.metrics).length > 0 || line.placements.length > 0 || line.perPost.length > 0;
+  return (
+    Object.keys(line.metrics).length > 0 ||
+    line.placements.length > 0 ||
+    line.perPost.length > 0 ||
+    line.stateSplit.length > 0
+  );
 }
 
 /** Re-export for callers that only need station block typing. */

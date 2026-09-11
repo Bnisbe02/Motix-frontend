@@ -1,4 +1,5 @@
 import { createSignedUrl } from '../pcrApi';
+import { BRAND_ASSETS_BUCKET, PCR_ASSETS_BUCKET } from '../../types/pcr';
 import { AssetResolver } from './pptxGenerator';
 
 /*
@@ -51,19 +52,24 @@ function downscaleToDataUrl(blob: Blob): Promise<string | null> {
  */
 export function makeAssetResolver(): AssetResolver {
   const cache = new Map<string, string | null>();
+  // Report screenshots live in pcr-assets; brand-kit logos/cover live in
+  // brand-assets. The resolver only gets a path, so try both buckets — the
+  // one that owns the object signs successfully, the other returns null.
+  const buckets = [PCR_ASSETS_BUCKET, BRAND_ASSETS_BUCKET];
   return async (path: string): Promise<string | null> => {
     if (cache.has(path)) return cache.get(path) ?? null;
     let result: string | null = null;
-    try {
-      const url = await createSignedUrl(path);
-      if (url) {
+    for (const bucket of buckets) {
+      try {
+        const url = await createSignedUrl(path, bucket);
+        if (!url) continue;
         const res = await fetch(url);
-        if (res.ok) {
-          result = await downscaleToDataUrl(await res.blob());
-        }
+        if (!res.ok) continue;
+        result = await downscaleToDataUrl(await res.blob());
+        if (result) break;
+      } catch {
+        /* try next bucket */
       }
-    } catch {
-      result = null;
     }
     cache.set(path, result);
     return result;

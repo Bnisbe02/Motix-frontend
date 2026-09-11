@@ -155,7 +155,18 @@ export async function generatePdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(12);
   doc.text(`${model.meta.advertiser}  ·  ${model.meta.dateFrom} – ${model.meta.dateTo}`, margin, 122);
-  y = 180;
+  const sample = model.gaps.sampleData === true;
+  if (sample) {
+    doc.setFillColor(accent.r, accent.g, accent.b);
+    doc.rect(0, 150, pageW, 22, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text('SAMPLE DATA — not live-verified', margin, 165);
+    y = 195;
+  } else {
+    y = 180;
+  }
 
   // ---- Overview ----
   if (narrative && narrative.overview.trim() !== '') {
@@ -167,6 +178,7 @@ export async function generatePdf(
   const b = model.broadcast;
   if (b.hasObserved || b.hasAired || b.hasBooked) {
     heading('Broadcast delivery');
+    if (sample) paragraph('Sample data — no live feed connected.', 10);
     if (narrative?.sections?.broadcast) paragraph(narrative.sections.broadcast);
     const cols: Array<{ key: 'observed' | 'aired' | 'booked'; label: string }> = [];
     if (b.hasObserved) cols.push({ key: 'observed', label: 'MOTIX observed' });
@@ -203,7 +215,7 @@ export async function generatePdf(
   // ---- Media lines ----
   for (const line of model.mediaLines) {
     const entries = Object.entries(line.metrics);
-    if (entries.length === 0 && line.placements.length === 0 && line.perPost.length === 0) continue;
+    if (entries.length === 0 && line.placements.length === 0 && line.perPost.length === 0 && line.stateSplit.length === 0) continue;
     heading(`${line.lineType.charAt(0).toUpperCase()}${line.lineType.slice(1)} — ${line.label}`);
     const sectionCopy = narrative?.sections?.[line.lineType] ?? narrative?.sections?.[line.label];
     if (sectionCopy) paragraph(sectionCopy);
@@ -219,6 +231,9 @@ export async function generatePdf(
     }
     if (line.perPost.length > 0) {
       table(['Post', 'Reach'], line.perPost.map((p) => [p.label, p.reach.toLocaleString('en-AU')]), ['left', 'right']);
+    }
+    if (line.stateSplit.length > 0) {
+      table(['State', '%'], line.stateSplit.map((s) => [s.state, `${s.percent}%`]), ['left', 'right']);
     }
   }
 

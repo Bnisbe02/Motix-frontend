@@ -226,6 +226,9 @@ export default function StepReview({ report, onBack, onExported }: StepReviewPro
     try {
       const narrative: Narrative = { overview: overview.trim(), sections, editedAt: new Date().toISOString() };
       const updated = await updateReport(report.id, { narrative });
+      // Propagate to the parent so a remount (leaving and returning to this
+      // step) seeds from the saved narrative, not the stale/empty copy.
+      onExported?.(updated);
       addToast('success', 'Narrative saved.');
       return updated;
     } catch (err) {
@@ -261,9 +264,12 @@ export default function StepReview({ report, onBack, onExported }: StepReviewPro
   const handleDownloadPdf = async (): Promise<void> => {
     setGenState('pdf');
     try {
+      await saveNarrative();
       const resolver = makeAssetResolver();
       const blob = await generatePdf(model, brandKit, { narrative: currentNarrative(), assetResolver: resolver });
       downloadBlob(blob, `${baseName}.pdf`);
+      const updated = await updateReport(report.id, { status: 'exported' });
+      onExported?.(updated);
       setGenState('done');
       addToast('success', 'PDF generated and downloaded.');
     } catch (err) {

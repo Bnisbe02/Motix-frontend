@@ -22,6 +22,34 @@ export function timeToMinutes(value: string): number {
   return h * 60 + m;
 }
 
+/** Name used when a local time falls outside every configured daypart. */
+export const UNASSIGNED_DAYPART = 'Unassigned';
+
+/**
+ * Assign a station-local 'HH:MM' time to a daypart by name. A time belongs to
+ * the window [start, end); an end of '24:00' means midnight (1440). Dayparts
+ * do not wrap past midnight (Nova's late windows are 22:00-24:00 and
+ * 00:00-05:30 as two separate rows), so no wrap handling is needed. Returns
+ * UNASSIGNED_DAYPART if the time matches no window or is malformed.
+ */
+export function assignDaypart(localHHMM: string, dayparts: Daypart[]): string {
+  if (!isValidTime(localHHMM) || localHHMM === '24:00') {
+    return UNASSIGNED_DAYPART;
+  }
+  const minutes = timeToMinutes(localHHMM);
+  for (const d of dayparts) {
+    if (!isValidTime(d.start) || !isValidTime(d.end)) {
+      continue;
+    }
+    const start = timeToMinutes(d.start);
+    const end = timeToMinutes(d.end); // '24:00' -> 1440
+    if (minutes >= start && minutes < end) {
+      return d.name;
+    }
+  }
+  return UNASSIGNED_DAYPART;
+}
+
 export interface DaypartValidation {
   /** Row-level messages keyed by row index. */
   rowErrors: Record<number, string>;

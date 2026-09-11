@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, CreditCard as Edit3, Trash2 } from 'lucide-react';
 import DaySelector from './DaySelector';
+import { parseDelimitedText, TabularData } from '../lib/tabularImport';
 
 export interface ParsedBooking {
   station: string;
@@ -11,10 +12,8 @@ export interface ParsedBooking {
   flighting: string;
 }
 
-interface CSVData {
-  headers: string[];
-  rows: string[][];
-}
+/** Legacy alias kept for this component; the shared shape is TabularData. */
+type CSVData = TabularData;
 
 interface ColumnMapping {
   station: string;
@@ -40,15 +39,6 @@ const FLIGHTING_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Weekend', value: 'AS' },
   { label: 'Custom', value: '' },
 ];
-
-function parseCSVText(text: string): CSVData {
-  const lines = text.trim().split('\n');
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
-  const rows = lines.slice(1).map((line) =>
-    line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''))
-  );
-  return { headers, rows };
-}
 
 function applyColumnMapping(data: CSVData, mapping: ColumnMapping): ParsedBooking[] {
   return data.rows
@@ -87,7 +77,7 @@ export default function BookingUploadModal({ isOpen, onClose, onComplete }: Book
     const reader = new FileReader();
     reader.onload = (e: ProgressEvent<FileReader>): void => {
       const text = e.target?.result as string;
-      const data = parseCSVText(text);
+      const data = parseDelimitedText(text);
       if (data.headers.length < 2) {
         setParseError('File does not appear to be a valid CSV. Please check the format and try again.');
         return;

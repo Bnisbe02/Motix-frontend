@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, User, Folder, FileText, MessageSquare, ChevronDown, Menu, X, Palette } from 'lucide-react';
+import { LogOut, User, Folder, FileText, FileBarChart, MessageSquare, ChevronDown, Menu, X, Palette } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useFeedStatus } from '../hooks/useFeedStatus';
 import { useToast } from '../contexts/ToastContext';
@@ -75,7 +75,8 @@ export default function AppHeader() {
 
   const navItems = [
     { path: '/app/campaigns', icon: Folder, label: 'Campaigns' },
-    { path: '/app/report', icon: FileText, label: 'Reports' },
+    { path: '/app/reports', icon: FileBarChart, label: 'Reports' },
+    { path: '/app/report', icon: FileText, label: 'Spot report' },
     { path: '/app/chat', icon: MessageSquare, label: 'Chat Search' },
     { path: '/app/settings/brand', icon: Palette, label: 'Brand kit' },
   ];
@@ -97,7 +98,7 @@ export default function AppHeader() {
 
             <nav className="hidden md:flex gap-1">
               {navItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.path);
+                const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
                 const Icon = item.icon;
                 return (
                   <Link
@@ -184,7 +185,7 @@ export default function AppHeader() {
 
             <nav className="flex-1 flex flex-col p-4 space-y-2">
               {navItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.path);
+                const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
                 const Icon = item.icon;
                 return (
                   <Link

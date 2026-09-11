@@ -278,6 +278,11 @@ export interface PcrPlanRow {
   spot_class: SpotClass | null;
   media_value: number | null;
   contract_ref: string | null;
+  /**
+   * Booked rows: the number of spots the plan line represents (from a total
+   * or per-day column). Null for aired rows, where one row is one aired spot.
+   */
+  spots: number | null;
   /** The original row, untouched. */
   raw: Record<string, unknown>;
   created_at: string;

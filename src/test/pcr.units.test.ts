@@ -23,6 +23,7 @@ import {
   normalisePlanRows,
   parseDelimitedText,
   AIRED_TARGETS,
+  BOOKED_TARGETS,
   TabularData,
 } from '../lib/tabularImport';
 
@@ -104,6 +105,18 @@ eq(
   combineAiredTimestamp('15/09/2026', '07:30:00', 'Australia/Perth'),
   '2026-09-14T23:30:00.000Z'
 );
+// DST edge: Sydney springs forward 2026-10-04 02:00. 00:30 is still AEST +10.
+eq(
+  'combineAiredTimestamp Sydney pre-DST 00:30 -> UTC (+10)',
+  combineAiredTimestamp('04/10/2026', '00:30:00', 'Australia/Sydney'),
+  '2026-10-03T14:30:00.000Z'
+);
+// 03:30 on the same day is AEDT +11.
+eq(
+  'combineAiredTimestamp Sydney post-DST 03:30 -> UTC (+11)',
+  combineAiredTimestamp('04/10/2026', '03:30:00', 'Australia/Sydney'),
+  '2026-10-03T16:30:00.000Z'
+);
 
 // ------------------------------------------------------------
 console.log('\n# detection mapping');
@@ -174,6 +187,26 @@ eq('first row resolves Nova 96.9 -> NOVA969', normalised[0].station_callsign, 'N
 eq('first row aired_at computed', typeof normalised[0].aired_at === 'string' && normalised[0].aired_at!.endsWith('Z'), true);
 eq('first row duration 30s', normalised[0].duration_sec, 30);
 eq('first row media value numeric', normalised[0].media_value, 1250);
+
+// ------------------------------------------------------------
+console.log('\n# booked normalisation preserves spot quantity');
+const bookedData: TabularData = {
+  headers: ['Station', 'Date', 'Total Spots', 'Media Value'],
+  rows: [
+    ['Nova 96.9', '15/09/2026', '30', '0'],
+    ['Nova 100', '16/09/2026', '12', '500'],
+  ],
+};
+const bookedMapping = autoMapColumns(bookedData.headers, BOOKED_TARGETS);
+const bookedNorm = normalisePlanRows(bookedData, bookedMapping, 'booked', null, {
+  stationIndex: idx,
+  timezoneForCallsign: (cs) => STATIONS.find((s) => s.callsign === cs)?.timezone,
+});
+eq('booked row 1 keeps 30 spots', bookedNorm[0].spots, 30);
+eq('booked row 2 keeps 12 spots', bookedNorm[1].spots, 12);
+eq('booked row 1 booked_date parsed', bookedNorm[0].booked_date, '2026-09-15');
+eq('booked row 1 zero media value -> bonus', bookedNorm[0].spot_class, 'bonus');
+eq('aired rows carry null spots', normalised[0].spots, null);
 
 // ------------------------------------------------------------
 console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'} (${count} checks)`);

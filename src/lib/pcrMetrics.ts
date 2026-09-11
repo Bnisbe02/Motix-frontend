@@ -101,16 +101,24 @@ export function zonedWallTimeToUtcISO(
   second: number,
   timeZone: string
 ): string {
-  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
-  let tzView: { y: number; mo: number; d: number; h: number; mi: number };
+  const target = Date.UTC(year, month - 1, day, hour, minute, second);
+  let utc = target;
   try {
-    tzView = tzPartsOf(new Date(utcGuess), timeZone);
+    // Iterate: re-derive the offset at the corrected instant, so a wall time
+    // near a DST transition (where the offset at the initial guess differs
+    // from the offset at the true instant) still resolves correctly. Two
+    // passes converge for every non-ambiguous local time.
+    for (let i = 0; i < 2; i += 1) {
+      const v = tzPartsOf(new Date(utc), timeZone);
+      const viewAsUtc = Date.UTC(v.y, v.mo - 1, v.d, v.h, v.mi, second);
+      const error = viewAsUtc - target;
+      if (error === 0) break;
+      utc -= error;
+    }
   } catch {
-    return new Date(utcGuess).toISOString();
+    return new Date(target).toISOString();
   }
-  const tzGuessUtc = Date.UTC(tzView.y, tzView.mo - 1, tzView.d, tzView.h, tzView.mi, second);
-  const offset = utcGuess - tzGuessUtc;
-  return new Date(utcGuess + offset).toISOString();
+  return new Date(utc).toISOString();
 }
 
 // ------------------------------------------------------------

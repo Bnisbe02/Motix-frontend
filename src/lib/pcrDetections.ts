@@ -129,31 +129,39 @@ export async function fetchDetections(
   const { minUtc, maxUtc } = utcBounds(dateFrom, dateTo, selectedTimezones);
 
   const columns = Object.values(DETECTION_COLUMNS).join(',');
+  const PAGE = 1000;
 
   try {
-    const { data, error } = await supabase
-      .from('detections')
-      .select(columns)
-      .ilike(DETECTION_COLUMNS.brand, `%${trimmed}%`)
-      .gte(DETECTION_COLUMNS.tsUtc, minUtc)
-      .lte(DETECTION_COLUMNS.tsUtc, maxUtc)
-      .in(DETECTION_COLUMNS.station, stationCallsigns)
-      .order(DETECTION_COLUMNS.tsUtc, { ascending: true })
-      .limit(5000);
+    // Page through the full result set rather than truncating at a fixed cap,
+    // so long or many-station campaigns are never silently cut off.
+    const rows: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('detections')
+        .select(columns)
+        .ilike(DETECTION_COLUMNS.brand, `%${trimmed}%`)
+        .gte(DETECTION_COLUMNS.tsUtc, minUtc)
+        .lte(DETECTION_COLUMNS.tsUtc, maxUtc)
+        .in(DETECTION_COLUMNS.station, stationCallsigns)
+        .order(DETECTION_COLUMNS.tsUtc, { ascending: true })
+        .range(from, from + PAGE - 1);
 
-    if (error) {
-      const mirrorMissing = isMissingTableError(error.message);
-      return {
-        detections: [],
-        unresolvedStations: [],
-        error: mirrorMissing
-          ? 'The MOTIX detections mirror is not available yet for this workspace.'
-          : error.message,
-        mirrorMissing,
-      };
+      if (error) {
+        const mirrorMissing = isMissingTableError(error.message);
+        return {
+          detections: [],
+          unresolvedStations: [],
+          error: mirrorMissing
+            ? 'The MOTIX detections mirror is not available yet for this workspace.'
+            : error.message,
+          mirrorMissing,
+        };
+      }
+      const page = (data ?? []) as unknown as Record<string, unknown>[];
+      rows.push(...page);
+      if (page.length < PAGE) break;
     }
 
-    const rows = (data ?? []) as unknown as Record<string, unknown>[];
     const unresolved = new Set<string>();
     const detections: PcrDetection[] = rows.map((row) => {
       const rawStation = String(row[DETECTION_COLUMNS.station] ?? '');

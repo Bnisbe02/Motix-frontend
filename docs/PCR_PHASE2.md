@@ -76,6 +76,15 @@ who knows another agency's report UUID cannot attach child rows to it. This is
 stricter than the plain `report_id` FK in the brief; it relies on the Phase 1
 `pcr_reports UNIQUE (id, agency_id)`.
 
+`pcr_plan_rows` additionally references its asset by a composite
+`FOREIGN KEY (asset_id, report_id) REFERENCES pcr_assets(id, report_id)` (the
+migration adds `pcr_assets UNIQUE (id, report_id)` for it), so a row's asset
+must belong to the row's own report — a plain `asset_id` FK would only prove
+the asset exists. It also carries a nullable `spots int`: booked lines record
+the spot quantity the line represents (from a total or per-day column) so
+Review sums quantities rather than counting one per file line; aired rows leave
+it null (one row is one aired spot).
+
 Rollback: `supabase/rollback/20260911999901_rollback_pcr_phase2.sql` drops the
 two tables and restores the previous `asset_type` CHECK. Run it before the
 Phase 1 rollback if backing out both.

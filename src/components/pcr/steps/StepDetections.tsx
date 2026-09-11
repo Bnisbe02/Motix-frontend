@@ -7,6 +7,7 @@ import { DEFAULT_DAYPARTS } from '../../../types/pcr';
 import { fetchDetections } from '../../../lib/pcrDetections';
 import { summariseDetections } from '../../../lib/pcrMetrics';
 import { listInclusions, upsertInclusions, InclusionInput } from '../../../lib/pcrApi';
+import { useToast } from '../../../contexts/ToastContext';
 import type { PcrDetection } from '../../../types/pcr';
 
 /*
@@ -28,7 +29,11 @@ interface StepDetectionsProps {
 export default function StepDetections({ report, agencyId, userId, onBack, onNext }: StepDetectionsProps) {
   const { stations } = useStations();
   const { brandKit } = useBrandKit();
+  const { addToast } = useToast();
   const dayparts = brandKit?.dayparts ?? DEFAULT_DAYPARTS;
+  // Stable key so the fetch re-runs once the saved brand kit (with custom
+  // dayparts) loads after the initial render, not just on mount.
+  const daypartsKey = JSON.stringify(dayparts);
 
   const [detections, setDetections] = useState<PcrDetection[]>([]);
   const [unresolved, setUnresolved] = useState<string[]>([]);
@@ -68,15 +73,15 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report.id, report.advertiser, report.date_from, report.date_to, stations]);
+  }, [report.id, report.advertiser, report.date_from, report.date_to, stations, daypartsKey]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const persist = useCallback(
-    async (changed: Array<{ id: string; included: boolean }>): Promise<void> => {
-      if (changed.length === 0) return;
+    async (changed: Array<{ id: string; included: boolean }>): Promise<boolean> => {
+      if (changed.length === 0) return true;
       const rows: InclusionInput[] = changed.map((c) => ({
         report_id: report.id,
         agency_id: agencyId,
@@ -86,28 +91,36 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
       }));
       try {
         await upsertInclusions(rows);
-      } catch {
-        /* toast handled at a higher level if needed; keep UI responsive */
+        return true;
+      } catch (err) {
+        addToast('error', err instanceof Error ? err.message : 'Could not save that change. It was reverted.');
+        return false;
       }
     },
-    [report.id, agencyId, userId]
+    [report.id, agencyId, userId, addToast]
   );
 
-  const toggle = (id: string): void => {
+  // Apply an optimistic change, then revert it if the write fails so the UI
+  // never shows a decision that was not persisted.
+  const applyChange = (changes: Array<{ id: string; included: boolean }>): void => {
     setInclusions((prev) => {
-      const next = { ...prev, [id]: !(prev[id] ?? true) };
-      void persist([{ id, included: next[id] }]);
+      const before: Record<string, boolean> = {};
+      for (const c of changes) before[c.id] = prev[c.id] ?? true;
+      const next = { ...prev };
+      for (const c of changes) next[c.id] = c.included;
+      void persist(changes).then((ok) => {
+        if (!ok) setInclusions((cur) => ({ ...cur, ...before }));
+      });
       return next;
     });
   };
 
+  const toggle = (id: string, current: boolean): void => {
+    applyChange([{ id, included: !current }]);
+  };
+
   const setGroup = (ids: string[], included: boolean): void => {
-    setInclusions((prev) => {
-      const next = { ...prev };
-      for (const id of ids) next[id] = included;
-      void persist(ids.map((id) => ({ id, included })));
-      return next;
-    });
+    applyChange(ids.map((id) => ({ id, included })));
   };
 
   const summary = useMemo(() => summariseDetections(detections, inclusions), [detections, inclusions]);
@@ -218,7 +231,7 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
                                 <input
                                   type="checkbox"
                                   checked={included}
-                                  onChange={() => toggle(d.id)}
+                                  onChange={() => toggle(d.id, included)}
                                   aria-label={`Include detection ${d.id}`}
                                 />
                               </td>

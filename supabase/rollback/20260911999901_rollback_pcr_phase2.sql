@@ -17,6 +17,9 @@
 DROP TABLE IF EXISTS pcr_plan_rows;
 DROP TABLE IF EXISTS pcr_detection_inclusions;
 
+-- 1b. Drop the composite unique added to pcr_assets for the plan-row FK.
+ALTER TABLE pcr_assets DROP CONSTRAINT IF EXISTS pcr_assets_id_report_id_key;
+
 -- 2. Restore the Phase 1 asset_type CHECK (no 'delivery_log')
 ALTER TABLE pcr_assets DROP CONSTRAINT IF EXISTS pcr_assets_asset_type_check;
 ALTER TABLE pcr_assets

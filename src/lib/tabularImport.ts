@@ -344,6 +344,7 @@ export interface NormalisedPlanRow {
   spot_class: SpotClass | null;
   media_value: number | null;
   contract_ref: string | null;
+  spots: number | null;
   raw: Record<string, unknown>;
 }
 
@@ -391,6 +392,14 @@ export function normalisePlanRows(
 
       let airedAt: string | null = null;
       let bookedDate: string | null = null;
+      // Booked rows: preserve the spot quantity the line represents (total or
+      // per-day column) so Review sums quantities, not one per file line.
+      // Null for aired rows, where one row is one aired spot.
+      const spots =
+        kind === 'booked'
+          ? parseNumber(cellByHeader(data, row, mapping.totalSpots)) ??
+            parseNumber(cellByHeader(data, row, mapping.spotsPerDay))
+          : null;
 
       if (kind === 'aired') {
         const tz = callsign ? ctx.timezoneForCallsign(callsign) : undefined;
@@ -425,6 +434,7 @@ export function normalisePlanRows(
         spot_class: spotClass,
         media_value: mediaValue,
         contract_ref: mapping.contract ? cellByHeader(data, row, mapping.contract).trim() || null : null,
+        spots: spots === null ? null : Math.round(spots),
         raw: rawObj,
       };
     });

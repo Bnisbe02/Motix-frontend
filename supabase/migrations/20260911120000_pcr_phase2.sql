@@ -29,6 +29,18 @@ ALTER TABLE pcr_assets
   ADD CONSTRAINT pcr_assets_asset_type_check
   CHECK (asset_type IN ('media_plan','delivery_log','screenshot','campaign_image','other'));
 
+-- Composite unique so pcr_plan_rows can reference (asset_id, report_id) and
+-- guarantee a plan row's asset belongs to the row's own report (a plain
+-- asset_id FK only proves the asset exists, allowing a crafted insert to
+-- attach another report's or tenant's asset). Added only if absent — it
+-- cannot be dropped-and-recreated once pcr_plan_rows' FK depends on it.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'pcr_assets_id_report_id_key') THEN
+    ALTER TABLE pcr_assets ADD CONSTRAINT pcr_assets_id_report_id_key UNIQUE (id, report_id);
+  END IF;
+END $$;
+
 -- ============================================================
 -- 2. pcr_detection_inclusions
 -- ============================================================
@@ -81,7 +93,7 @@ CREATE TABLE IF NOT EXISTS pcr_plan_rows (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   report_id     uuid NOT NULL,
   agency_id     text NOT NULL,
-  asset_id      uuid NOT NULL REFERENCES pcr_assets(id) ON DELETE CASCADE,
+  asset_id      uuid NOT NULL,
   row_kind      text NOT NULL CHECK (row_kind IN ('booked','aired')),
   station_callsign text,                 -- resolved against stations registry, null if unresolved
   station_raw   text NOT NULL,           -- exactly what the file said
@@ -93,10 +105,14 @@ CREATE TABLE IF NOT EXISTS pcr_plan_rows (
   spot_class    text CHECK (spot_class IN ('paid','bonus','unknown')),
   media_value   numeric(12,2),
   contract_ref  text,
+  spots         int,                     -- booked rows: spot quantity the line represents; null for aired
   raw           jsonb NOT NULL,          -- the original row, untouched
   created_at    timestamptz NOT NULL DEFAULT now(),
   -- Composite FK for the same tenancy guard as pcr_detection_inclusions.
-  FOREIGN KEY (report_id, agency_id) REFERENCES pcr_reports(id, agency_id) ON DELETE CASCADE
+  FOREIGN KEY (report_id, agency_id) REFERENCES pcr_reports(id, agency_id) ON DELETE CASCADE,
+  -- The asset must belong to this row's report (composite, not a plain
+  -- asset_id FK). Cascade so deleting an import removes its rows.
+  FOREIGN KEY (asset_id, report_id) REFERENCES pcr_assets(id, report_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_pcr_plan_rows_report ON pcr_plan_rows(report_id, row_kind);

@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader2, AlertTriangle, Lock, CheckCircle2 } from 'lucide-react';
-import { PcrReport, PcrPlanRow, PcrMediaLine, FigureSource, DEFAULT_DAYPARTS } from '../../../types/pcr';
+import { PcrReport, PcrPlanRow, PcrMediaLine, PcrAsset, FigureSource, DEFAULT_DAYPARTS } from '../../../types/pcr';
 import type { PcrDetection } from '../../../types/pcr';
 import { useStations } from '../../../hooks/useStations';
 import { useBrandKit } from '../../../hooks/useBrandKit';
 import { fetchDetections } from '../../../lib/pcrDetections';
-import { listInclusions, listPlanRows, listMediaLines } from '../../../lib/pcrApi';
+import { listInclusions, listPlanRows, listMediaLines, listAssets } from '../../../lib/pcrApi';
 
 /*
   Step 5 — Review. Read-only. Every figure carries a source chip
@@ -49,10 +49,12 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
   const { stations } = useStations();
   const { brandKit } = useBrandKit();
   const dayparts = brandKit?.dayparts ?? DEFAULT_DAYPARTS;
+  const daypartsKey = JSON.stringify(dayparts);
 
   const [detections, setDetections] = useState<PcrDetection[]>([]);
   const [inclusionMap, setInclusionMap] = useState<Record<string, boolean>>({});
   const [planRows, setPlanRows] = useState<PcrPlanRow[]>([]);
+  const [assets, setAssets] = useState<PcrAsset[]>([]);
   const [mediaLines, setMediaLines] = useState<PcrMediaLine[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
     if (stations.length === 0) return;
     setIsLoading(true);
     try {
-      const [det, incl, rows, lines] = await Promise.all([
+      const [det, incl, rows, lines, assetRows] = await Promise.all([
         fetchDetections({
           advertiser: report.advertiser,
           dateFrom: report.date_from,
@@ -74,6 +76,7 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
         listInclusions(report.id),
         listPlanRows(report.id),
         listMediaLines(report.id),
+        listAssets(report.id),
       ]);
       setDetections(det.detections);
       setMirrorMissing(det.mirrorMissing);
@@ -81,6 +84,7 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
       for (const r of incl) map[r.detection_id] = r.included;
       setInclusionMap(map);
       setPlanRows(rows);
+      setAssets(assetRows);
       setMediaLines(lines);
       setError(det.error && !det.mirrorMissing ? det.error : null);
     } catch (err) {
@@ -89,7 +93,7 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report.id, stations]);
+  }, [report.id, stations, daypartsKey]);
 
   useEffect(() => {
     void load();
@@ -97,6 +101,23 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
 
   const stationName = (callsign: string): string =>
     stations.find((s) => s.callsign === callsign)?.display_name ?? callsign;
+
+  // A re-import creates a new asset version; only the latest version of each
+  // import kind is active, so Review counts rows from those assets only.
+  const activeAssetIds = useMemo(() => {
+    const latestByType: Record<string, PcrAsset> = {};
+    for (const a of assets) {
+      if (a.asset_type !== 'media_plan' && a.asset_type !== 'delivery_log') continue;
+      const cur = latestByType[a.asset_type];
+      if (!cur || a.version > cur.version) latestByType[a.asset_type] = a;
+    }
+    return new Set(Object.values(latestByType).map((a) => a.id));
+  }, [assets]);
+
+  const activePlanRows = useMemo(
+    () => planRows.filter((r) => activeAssetIds.has(r.asset_id)),
+    [planRows, activeAssetIds]
+  );
 
   const cells = useMemo(() => {
     const map = new Map<string, Cell>();
@@ -114,26 +135,27 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
       if (!(inclusionMap[d.id] ?? true)) continue;
       ensure(d.stationCallsign, d.daypart).motix += 1;
     }
-    for (const r of planRows) {
+    for (const r of activePlanRows) {
       const station = r.station_callsign ?? r.station_raw ?? '(unresolved)';
       const daypart = r.daypart_raw ?? 'Unassigned';
       const cell = ensure(station, daypart);
-      if (r.row_kind === 'booked') cell.booked += 1;
+      // Booked lines carry a spot quantity; aired rows are one spot each.
+      if (r.row_kind === 'booked') cell.booked += r.spots ?? 1;
       else cell.aired += 1;
     }
     return Array.from(map.values()).sort((a, b) =>
       a.station === b.station ? a.daypart.localeCompare(b.daypart) : a.station.localeCompare(b.station)
     );
-  }, [detections, inclusionMap, planRows]);
+  }, [detections, inclusionMap, activePlanRows]);
 
-  const hasBooked = planRows.some((r) => r.row_kind === 'booked');
-  const hasAired = planRows.some((r) => r.row_kind === 'aired');
+  const hasBooked = activePlanRows.some((r) => r.row_kind === 'booked');
+  const hasAired = activePlanRows.some((r) => r.row_kind === 'aired');
 
   const gaps = useMemo(() => {
     const list: string[] = [];
-    const unresolved = Array.from(new Set(planRows.filter((r) => !r.station_callsign).map((r) => r.station_raw)));
+    const unresolved = Array.from(new Set(activePlanRows.filter((r) => !r.station_callsign).map((r) => r.station_raw)));
     if (unresolved.length > 0) list.push(`Unresolved station names in imports: ${unresolved.join(', ')}.`);
-    const unknown = planRows.filter((r) => r.spot_class === 'unknown').length;
+    const unknown = activePlanRows.filter((r) => r.spot_class === 'unknown').length;
     if (unknown > 0) list.push(`${unknown} imported row(s) have an unknown paid/bonus classification.`);
     const missingNotes = mediaLines.filter((l) => (l.source_note ?? '').trim() === '');
     if (missingNotes.length > 0) {
@@ -143,7 +165,7 @@ export default function StepReview({ report, onBack }: StepReviewProps) {
     if (excluded > 0) list.push(`${excluded} MOTIX detection(s) excluded from this report.`);
     if (mirrorMissing) list.push('MOTIX broadcast figures are unavailable (mirror not synced yet).');
     return list;
-  }, [planRows, mediaLines, detections, inclusionMap, mirrorMissing]);
+  }, [activePlanRows, mediaLines, detections, inclusionMap, mirrorMissing]);
 
   if (isLoading) {
     return (

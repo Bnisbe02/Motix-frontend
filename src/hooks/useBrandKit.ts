@@ -244,16 +244,25 @@ export function useBrandKit(): UseBrandKitResult {
       const column = KIND_TO_COLUMN[kind];
       const currentPath = brandKit?.[column] ?? null;
 
+      // Clear the database path first: if this fails the object is still
+      // there and the kit still points at it, so nothing is lost. Only once
+      // the DB no longer references the object do we delete it.
+      const saved = await save({ [column]: null });
+      if (!saved.success) {
+        return saved;
+      }
+
       if (currentPath) {
         try {
-          // Best effort: a stale object is harmless, the DB path is the source of truth.
+          // Best effort: an orphaned object is harmless and is overwritten
+          // by the next upload of the same kind and extension.
           await supabase.storage.from(BRAND_ASSETS_BUCKET).remove([currentPath]);
         } catch {
           /* ignore */
         }
       }
 
-      return save({ [column]: null });
+      return saved;
     },
     [brandKit, save]
   );

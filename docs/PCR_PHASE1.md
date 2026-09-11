@@ -72,7 +72,8 @@ One row per report: advertiser, campaign, date range (`CHECK date_to >=
 date_from`), `station_callsigns text[]`, objectives, `status`
 (`draft | generated | exported`), optional client logo path, and a
 `narrative jsonb` column that Phase 3 will fill with model-drafted,
-user-edited copy. `created_by` references `auth.users`.
+user-edited copy. `created_by` references `auth.users`. `(id, agency_id)` is unique so child
+tables can reference both columns together.
 
 ### `pcr_media_lines`
 
@@ -81,15 +82,20 @@ social, integration, display, activation, audience, other). `metrics` is a
 free-form JSON object such as `{"imps_booked":430005,"imps_delivered":557241}`.
 The `source` column (`motix_observed | uploaded | manual`) and `source_note`
 record provenance so every figure on a slide can be traced. Rows cascade on
-report delete.
+report delete. The foreign key is composite, `(report_id, agency_id) →
+pcr_reports(id, agency_id)`, so a row can never be attached to another
+agency's report even if the caller knows its UUID.
 
 ### `pcr_assets`
 
 Uploaded files for a report: media plan workbooks, screenshots, campaign
 imagery. `storage_path` is an object key in the `pcr-assets` bucket.
 `version` increments for media plans, which are never overwritten. An asset
-can optionally point at a media line; that link is nulled if the line is
-deleted. Rows cascade on report delete.
+can optionally point at a media line via `(media_line_id, report_id) →
+pcr_media_lines(id, report_id)`, so the line must belong to the same
+report; only `media_line_id` is nulled if the line is deleted. The same
+composite `(report_id, agency_id)` guard as media lines applies. Rows
+cascade on report delete.
 
 ## Storage buckets and the agency-id path convention
 

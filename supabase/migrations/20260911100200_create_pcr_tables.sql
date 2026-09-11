@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS pcr_reports (
   narrative       jsonb,                    -- model-drafted, user-edited copy; filled in Phase 3
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  CHECK (date_to >= date_from)
+  CHECK (date_to >= date_from),
+  -- Lets child tables reference (id, agency_id) so a child row can never
+  -- claim a different agency from its parent report.
+  UNIQUE (id, agency_id)
 );
 
 -- ============================================================
@@ -58,7 +61,15 @@ CREATE TABLE IF NOT EXISTS pcr_media_lines (
   source          text NOT NULL CHECK (source IN ('motix_observed','uploaded','manual')),
   source_note     text,                     -- e.g. 'GfK Fusion Survey 4 2025'
   sort_order      int NOT NULL DEFAULT 0,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- Tenancy guard: RLS checks the child's agency_id and the FK checks the
+  -- report exists, but neither alone stops a caller attaching a row of their
+  -- own agency to another agency's report. The composite FK forces the
+  -- child's agency_id to equal the parent report's.
+  FOREIGN KEY (report_id, agency_id) REFERENCES pcr_reports(id, agency_id) ON DELETE CASCADE,
+  -- Lets pcr_assets reference (id, report_id) so an asset's media line must
+  -- belong to the asset's own report.
+  UNIQUE (id, report_id)
 );
 
 -- ============================================================
@@ -74,8 +85,15 @@ CREATE TABLE IF NOT EXISTS pcr_assets (
   original_name   text NOT NULL,
   mime_type       text,
   version         int NOT NULL DEFAULT 1,   -- media plans are versioned, never overwritten
-  media_line_id   uuid REFERENCES pcr_media_lines(id) ON DELETE SET NULL,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  media_line_id   uuid,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- Same tenancy guard as pcr_media_lines (see comment there).
+  FOREIGN KEY (report_id, agency_id) REFERENCES pcr_reports(id, agency_id) ON DELETE CASCADE,
+  -- The linked media line must belong to this asset's report. When the line
+  -- is deleted only media_line_id is nulled (PostgreSQL 15+ column list),
+  -- report_id is left intact.
+  FOREIGN KEY (media_line_id, report_id) REFERENCES pcr_media_lines(id, report_id)
+    ON DELETE SET NULL (media_line_id)
 );
 
 -- ============================================================

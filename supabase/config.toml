@@ -11,6 +11,12 @@ project_id = "motix-frontend"
 [functions.chat]
 verify_jwt = true
 
+# pcr-narrative: invoked with the signed-in user's session token to draft the
+# Post-Campaign Report narrative; verifies the user and applies ALLOWED_EMAILS
+# itself, exactly like chat.
+[functions.pcr-narrative]
+verify_jwt = true
+
 [functions.contact]
 verify_jwt = false
 

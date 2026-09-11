@@ -40,6 +40,18 @@ export type RowKind = 'booked' | 'aired';
 /** Paid vs bonus classification of a spot. Never inferred from detections. */
 export type SpotClass = 'paid' | 'bonus' | 'unknown';
 
+/**
+ * Model-drafted, user-edited report copy, saved to pcr_reports.narrative.
+ * `overview` is the campaign overview paragraph; `sections` maps a section
+ * key (e.g. 'broadcast', 'podcast', 'audience') to a one-line summary.
+ */
+export interface Narrative {
+  overview: string;
+  sections: Record<string, string>;
+  /** Set when the user last edited/saved; absent on a fresh draft. */
+  editedAt?: string;
+}
+
 /** A JSON-serialisable metric value (scalar, list, or nested object). */
 export type MetricValue = number | string | null | MetricValue[] | { [key: string]: MetricValue };
 export type MediaMetrics = Record<string, MetricValue>;
@@ -109,6 +121,10 @@ export interface BrandKit {
   logo_dark_path: string | null;
   cover_image_path: string | null;
   dayparts: Daypart[];
+  /** Report voice: a short description of the desired narrative tone. */
+  tone_description: string | null;
+  /** Optional reference copy guiding voice only (never echoed verbatim). */
+  tone_reference: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -138,7 +154,7 @@ export interface PcrReport {
   status: ReportStatus;
   client_logo_path: string | null;
   /** Model-drafted, user-edited copy; filled in Phase 3. */
-  narrative: Record<string, unknown> | null;
+  narrative: Narrative | null;
   created_at: string;
   updated_at: string;
 }
@@ -212,6 +228,8 @@ export const DEFAULT_BRAND_KIT: Omit<BrandKit, 'id' | 'agency_id' | 'created_at'
   logo_dark_path: null,
   cover_image_path: null,
   dayparts: DEFAULT_DAYPARTS,
+  tone_description: null,
+  tone_reference: null,
 };
 
 export const BRAND_ASSETS_BUCKET = 'brand-assets';

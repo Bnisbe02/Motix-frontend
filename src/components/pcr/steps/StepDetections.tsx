@@ -4,7 +4,7 @@ import { PcrReport } from '../../../types/pcr';
 import { useStations } from '../../../hooks/useStations';
 import { useBrandKit } from '../../../hooks/useBrandKit';
 import { DEFAULT_DAYPARTS } from '../../../types/pcr';
-import { fetchDetections } from '../../../lib/pcrDetections';
+import { fetchDetections, DetectionSource } from '../../../lib/pcrDetections';
 import { summariseDetections } from '../../../lib/pcrMetrics';
 import { listInclusions, upsertInclusions, InclusionInput } from '../../../lib/pcrApi';
 import { useToast } from '../../../contexts/ToastContext';
@@ -41,6 +41,7 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [mirrorMissing, setMirrorMissing] = useState<boolean>(false);
+  const [source, setSource] = useState<DetectionSource>('mock');
 
   const load = useCallback(async (): Promise<void> => {
     if (stations.length === 0) return;
@@ -61,6 +62,7 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
       setUnresolved(result.unresolvedStations);
       setError(result.error);
       setMirrorMissing(result.mirrorMissing);
+      setSource(result.source);
 
       const existingMap: Record<string, boolean> = {};
       for (const row of existing) existingMap[row.detection_id] = row.included;
@@ -164,6 +166,11 @@ export default function StepDetections({ report, agencyId, userId, onBack, onNex
             <div className="px-3 py-2 rounded-lg bg-gray-50 text-gray-500 text-sm">
               {detections.length} observed
             </div>
+            {source === 'mock' && (
+              <div className="px-3 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm border border-slate-200">
+                Showing sample data (no live feed connected)
+              </div>
+            )}
           </div>
 
           {showBanner && (

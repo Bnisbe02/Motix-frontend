@@ -230,7 +230,9 @@ export default function ReportBuilder() {
                   </div>
                 </div>
               )}
-              {step === 5 && report && <StepReview report={report} onBack={() => setStep(4)} />}
+              {step === 5 && report && (
+                <StepReview report={report} onBack={() => setStep(4)} onExported={(updated) => setReport(updated)} />
+              )}
             </div>
           </div>
         )}

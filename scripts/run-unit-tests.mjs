@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const TESTS = ['src/test/pcr.units.test.ts'];
+const TESTS = ['src/test/pcr.units.test.ts', 'src/test/pcr.phase3.test.ts'];
 
 const outDir = mkdtempSync(join(tmpdir(), 'motix-tests-'));
 let failed = false;

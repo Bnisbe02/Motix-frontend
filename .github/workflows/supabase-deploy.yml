@@ -36,6 +36,9 @@ jobs:
       - name: Deploy Edge Function - chat
         run: supabase functions deploy chat --project-ref "$SUPABASE_PROJECT_REF"
 
+      - name: Deploy Edge Function - pcr-narrative
+        run: supabase functions deploy pcr-narrative --project-ref "$SUPABASE_PROJECT_REF"
+
       - name: Deploy Edge Function - contact
         run: supabase functions deploy contact --project-ref "$SUPABASE_PROJECT_REF"
 

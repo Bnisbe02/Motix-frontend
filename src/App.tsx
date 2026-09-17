@@ -16,6 +16,8 @@ import ChatSearch from './pages/ChatSearch';
 import AdminAuditLog from './pages/AdminAuditLog';
 import DataRequest from './pages/DataRequest';
 import BrandKitSettings from './pages/BrandKitSettings';
+import ReportsList from './pages/pcr/ReportsList';
+import ReportBuilder from './pages/pcr/ReportBuilder';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ToastProvider } from './contexts/ToastContext';
 import ToastContainer from './components/ToastContainer';
@@ -86,6 +88,30 @@ function App() {
           element={
             <ProtectedRoute>
               <BrandKitSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/reports"
+          element={
+            <ProtectedRoute>
+              <ReportsList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/reports/new"
+          element={
+            <ProtectedRoute>
+              <ReportBuilder />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/reports/:reportId"
+          element={
+            <ProtectedRoute>
+              <ReportBuilder />
             </ProtectedRoute>
           }
         />

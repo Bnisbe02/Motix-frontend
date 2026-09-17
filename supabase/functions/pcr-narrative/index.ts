@@ -187,8 +187,13 @@ Deno.serve(async (req: Request) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1500,
+        // claude-sonnet-4-20250514 was retired (404 not_found_error); claude-sonnet-5
+        // is the current-generation Sonnet. Thinking is disabled so the whole
+        // max_tokens budget goes to the strict-JSON output (Sonnet 5 runs adaptive
+        // thinking by default, which would otherwise consume the budget).
+        model: "claude-sonnet-5",
+        max_tokens: 2000,
+        thinking: { type: "disabled" },
         system,
         messages: [{ role: "user", content: `Report model JSON:\n${modelJson}` }],
       }),

@@ -438,8 +438,12 @@ Deno.serve(async (req: Request) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        // claude-sonnet-4-20250514 was retired (404 not_found_error); claude-sonnet-5
+        // is the current-generation Sonnet. Thinking is disabled to preserve the
+        // prior fast, non-thinking behaviour and keep the max_tokens budget for the reply.
+        model: "claude-sonnet-5",
         max_tokens: 1024,
+        thinking: { type: "disabled" },
         system: enrichedSystem,
         messages: sanitisedMessages,
       }),

@@ -89,6 +89,8 @@ interface BrandKitForm {
   heading_font: string;
   body_font: string;
   dayparts: Daypart[];
+  tone_description: string;
+  tone_reference: string;
 }
 
 function formFromKit(kit: BrandKit | null): BrandKitForm {
@@ -102,6 +104,8 @@ function formFromKit(kit: BrandKit | null): BrandKitForm {
     heading_font: source.heading_font,
     body_font: source.body_font,
     dayparts: (Array.isArray(source.dayparts) ? source.dayparts : DEFAULT_DAYPARTS).map((d) => ({ ...d })),
+    tone_description: kit?.tone_description ?? '',
+    tone_reference: kit?.tone_reference ?? '',
   };
 }
 
@@ -690,6 +694,8 @@ export default function BrandKitSettings() {
       heading_font: form.heading_font.trim(),
       body_font: form.body_font.trim(),
       dayparts: form.dayparts.map((d) => ({ name: d.name.trim(), start: d.start, end: d.end })),
+      tone_description: form.tone_description.trim() || null,
+      tone_reference: form.tone_reference.trim() || null,
     });
     if (result.success) {
       const normalised: BrandKitForm = {
@@ -702,6 +708,8 @@ export default function BrandKitSettings() {
         heading_font: form.heading_font.trim(),
         body_font: form.body_font.trim(),
         dayparts: form.dayparts.map((d) => ({ name: d.name.trim(), start: d.start, end: d.end })),
+        tone_description: form.tone_description.trim(),
+        tone_reference: form.tone_reference.trim(),
       };
       setForm(normalised);
       setSavedSnapshot(JSON.stringify(normalised));
@@ -862,6 +870,41 @@ export default function BrandKitSettings() {
                   />
                 </div>
                 <p className="text-xs text-gray-500">{FONT_HELPER_TEXT}</p>
+              </section>
+
+              <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Report voice</h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    The report writer matches this voice. Leave blank for a neutral factual tone.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="tone-description" className="block text-sm font-medium text-gray-700 mb-1">
+                    Tone description
+                  </label>
+                  <textarea
+                    id="tone-description"
+                    value={form.tone_description}
+                    onChange={(e) => updateField('tone_description', e.target.value)}
+                    rows={2}
+                    placeholder="e.g. warm, playful, confident, second person"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4131e0]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="tone-reference" className="block text-sm font-medium text-gray-700 mb-1">
+                    Reference copy (optional)
+                  </label>
+                  <textarea
+                    id="tone-reference"
+                    value={form.tone_reference}
+                    onChange={(e) => updateField('tone_reference', e.target.value)}
+                    rows={4}
+                    placeholder="Paste a past campaign overview paragraph or two in your house voice. Used to guide voice only — never copied into reports."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4131e0]"
+                  />
+                </div>
               </section>
 
               <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">

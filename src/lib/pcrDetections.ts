@@ -55,6 +55,18 @@ export interface FetchDetectionsResult {
   error: string | null;
   /** True when the detections table itself is missing (mirror not yet synced). */
   mirrorMissing: boolean;
+  /** Which source produced these rows, so the UI can label sample data. */
+  source: DetectionSource;
+}
+
+export type DetectionSource = 'mock' | 'mirror';
+
+/**
+ * The active detection source. Defaults to 'mock' until the OVH -> Supabase
+ * sync exists; flip VITE_PCR_DETECTION_SOURCE=mirror to use the real query.
+ */
+export function getDetectionSource(): DetectionSource {
+  return import.meta.env.VITE_PCR_DETECTION_SOURCE === 'mirror' ? 'mirror' : 'mock';
 }
 
 /**
@@ -107,16 +119,42 @@ export async function fetchDetections(
 ): Promise<FetchDetectionsResult> {
   const { advertiser, dateFrom, dateTo, stationCallsigns, stations, dayparts } = params;
 
+  const source = getDetectionSource();
   const empty: FetchDetectionsResult = {
     detections: [],
     unresolvedStations: [],
     error: null,
     mirrorMissing: false,
+    source,
   };
 
   const trimmed = advertiser.trim();
   if (trimmed === '' || stationCallsigns.length === 0) {
     return empty;
+  }
+
+  // Mock source: dynamically import so it tree-shakes out under 'mirror'.
+  if (source === 'mock') {
+    try {
+      const { generateMockDetections } = await import('./pcrDetections.mock');
+      const detections = generateMockDetections({
+        advertiser: trimmed,
+        dateFrom,
+        dateTo,
+        stationCallsigns,
+        stations,
+        dayparts,
+      });
+      return { detections, unresolvedStations: [], error: null, mirrorMissing: false, source };
+    } catch (err) {
+      return {
+        detections: [],
+        unresolvedStations: [],
+        error: err instanceof Error ? err.message : 'Failed to load sample detections',
+        mirrorMissing: false,
+        source,
+      };
+    }
   }
 
   const index = buildStationIndex(stations);
@@ -155,6 +193,7 @@ export async function fetchDetections(
             ? 'The MOTIX detections mirror is not available yet for this workspace.'
             : error.message,
           mirrorMissing,
+          source,
         };
       }
       const page = (data ?? []) as unknown as Record<string, unknown>[];
@@ -176,6 +215,7 @@ export async function fetchDetections(
       unresolvedStations: Array.from(unresolved),
       error: null,
       mirrorMissing: false,
+      source,
     };
   } catch (err) {
     return {
@@ -183,6 +223,7 @@ export async function fetchDetections(
       unresolvedStations: [],
       error: err instanceof Error ? err.message : 'Failed to load detections',
       mirrorMissing: false,
+      source,
     };
   }
 }
@@ -193,6 +234,12 @@ export async function fetchDetections(
  */
 export async function fetchAdvertiserSuggestions(prefix: string, limit = 20): Promise<string[]> {
   const trimmed = prefix.trim();
+  if (getDetectionSource() === 'mock') {
+    const { MOCK_ADVERTISER } = await import('./pcrDetections.mock');
+    return trimmed === '' || MOCK_ADVERTISER.toLowerCase().includes(trimmed.toLowerCase())
+      ? [MOCK_ADVERTISER]
+      : [];
+  }
   try {
     let query = supabase
       .from('detections')

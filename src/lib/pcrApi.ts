@@ -191,11 +191,9 @@ export async function uploadPcrAsset(input: UploadPcrAssetInput): Promise<PcrAss
   return orThrow(data, error, 'Failed to record asset');
 }
 
-export async function createSignedUrl(path: string): Promise<string | null> {
+export async function createSignedUrl(path: string, bucket: string = PCR_ASSETS_BUCKET): Promise<string | null> {
   try {
-    const { data, error } = await supabase.storage
-      .from(PCR_ASSETS_BUCKET)
-      .createSignedUrl(path, SIGNED_URL_TTL);
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL);
     if (error || !data?.signedUrl) return null;
     return data.signedUrl;
   } catch {

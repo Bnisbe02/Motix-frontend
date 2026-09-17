@@ -156,20 +156,19 @@ eq('empty split is valid (optional)', validateStateSplit({}).isValid, true);
 eq('split not summing 100 invalid', validateStateSplit({ NSW: 60, VIC: 30 }).isValid, false);
 
 // ------------------------------------------------------------
-console.log('\n# LDV auto-map and normalisation');
+console.log('\n# delivery-log auto-map and normalisation');
 const fs = await import('node:fs');
 const path = await import('node:path');
 // Run from the repo root via `npm test`; the bundled test lives in a temp dir,
 // so resolve the fixture from the working directory, not import.meta.url.
-const csvText = fs.readFileSync(path.join(process.cwd(), 'src/test/fixtures/ldv-sample.csv'), 'utf8');
+const csvText = fs.readFileSync(path.join(process.cwd(), 'src/test/fixtures/sample-delivery-log.csv'), 'utf8');
 const data: TabularData = parseDelimitedText(csvText);
 eq('fixture parsed 10 rows', data.rows.length, 10);
 const mapping = autoMapColumns(data.headers, AIRED_TARGETS);
 check('auto-map station without help', mapping.station === 'Station', mapping.station ?? 'null');
-check('auto-map aired date', mapping.airedDate === 'Aired Date', mapping.airedDate ?? 'null');
-check('auto-map aired time', mapping.airedTime === 'Aired Time', mapping.airedTime ?? 'null');
+check('auto-map combined Aired datetime', mapping.airedDateTime === 'Aired', mapping.airedDateTime ?? 'null');
 check('auto-map daypart', mapping.daypart === 'Day Part', mapping.daypart ?? 'null');
-check('auto-map duration to Aired Dur', mapping.duration === 'Aired Dur', mapping.duration ?? 'null');
+check('auto-map duration', mapping.duration === 'Duration', mapping.duration ?? 'null');
 check('auto-map Media as creative code', mapping.creativeCode === 'Media', mapping.creativeCode ?? 'null');
 check('auto-map media value', mapping.mediaValue === 'Media Value', mapping.mediaValue ?? 'null');
 check('auto-map contract', mapping.contract === 'Contract', mapping.contract ?? 'null');

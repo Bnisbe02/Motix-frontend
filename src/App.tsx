@@ -15,6 +15,7 @@ import Report from './pages/Report';
 import ChatSearch from './pages/ChatSearch';
 import AdminAuditLog from './pages/AdminAuditLog';
 import DataRequest from './pages/DataRequest';
+import BrandKitSettings from './pages/BrandKitSettings';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ToastProvider } from './contexts/ToastContext';
 import ToastContainer from './components/ToastContainer';
@@ -77,6 +78,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ChatSearch />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/settings/brand"
+          element={
+            <ProtectedRoute>
+              <BrandKitSettings />
             </ProtectedRoute>
           }
         />

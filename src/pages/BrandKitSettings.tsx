@@ -10,11 +10,21 @@ import {
   Save,
   AlertCircle,
   Loader2,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import AppHeader from '../components/AppHeader';
 import { useBrandKit, validateBrandAsset } from '../hooks/useBrandKit';
 import { useToast } from '../contexts/ToastContext';
-import { BrandAssetKind, BrandKit, Daypart, DEFAULT_BRAND_KIT, DEFAULT_DAYPARTS } from '../types/pcr';
+import {
+  BrandAssetKind,
+  BrandKit,
+  Daypart,
+  DeckSectionKey,
+  DECK_SECTION_KEYS,
+  DEFAULT_BRAND_KIT,
+  DEFAULT_DAYPARTS,
+} from '../types/pcr';
 import { DaypartValidation, isValidHexColour, isValidTime, validateDayparts } from '../utils/dayparts';
 
 /*
@@ -75,6 +85,23 @@ const ASSET_FIELDS: AssetFieldDef[] = [
   { kind: 'logo_dark', column: 'logo_dark_path', label: 'Logo (dark)', hint: 'Used on white backgrounds' },
   { kind: 'cover_image', column: 'cover_image_path', label: 'Cover image', hint: 'Optional title slide background (16:9 works best)' },
 ];
+
+/** Deck imagery uploads (texture + per-section heroes) allow a larger file. */
+const IMAGERY_MAX_MB = 5;
+
+/** Human labels for each deck section, in slide order. */
+const SECTION_IMAGE_LABELS: Record<DeckSectionKey, string> = {
+  cover: 'Cover',
+  overview: 'Overview',
+  broadcast: 'Broadcast',
+  reconciliation: 'Reconciliation',
+  streaming: 'Streaming',
+  podcast: 'Podcast',
+  social: 'Social',
+  integration: 'Integration',
+  audience: 'Audience',
+  closing: 'Closing',
+};
 
 // ------------------------------------------------------------
 // Form model
@@ -191,14 +218,28 @@ function ColourPicker({ def, value, onChange }: ColourPickerProps) {
 }
 
 interface AssetDropZoneProps {
-  def: AssetFieldDef;
+  label: string;
+  hint: string;
+  /** Renders the drop surface dark (for light-on-dark logos). */
+  darkSurface?: boolean;
+  /** Max size shown in the helper line, in MB. Defaults to 2. */
+  maxMb?: number;
   previewUrl: string | null;
   isBusy: boolean;
   onFile: (file: File) => void;
   onRemove: () => void;
 }
 
-function AssetDropZone({ def, previewUrl, isBusy, onFile, onRemove }: AssetDropZoneProps) {
+function AssetDropZone({
+  label,
+  hint,
+  darkSurface = false,
+  maxMb = 2,
+  previewUrl,
+  isBusy,
+  onFile,
+  onRemove,
+}: AssetDropZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
@@ -228,12 +269,10 @@ function AssetDropZone({ def, previewUrl, isBusy, onFile, onRemove }: AssetDropZ
 
   const handleBrowse = (): void => inputRef.current?.click();
 
-  const isDarkSurface = def.kind === 'logo_light';
-
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
-        <label className="text-sm font-medium text-gray-700">{def.label}</label>
+        <label className="text-sm font-medium text-gray-700">{label}</label>
         {previewUrl && (
           <button
             type="button"
@@ -261,7 +300,7 @@ function AssetDropZone({ def, previewUrl, isBusy, onFile, onRemove }: AssetDropZ
         onDragLeave={handleDragLeave}
         className={`relative flex items-center justify-center h-28 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
           isDragging ? 'border-[#4131e0] bg-[#E6E7FF]' : 'border-gray-300 hover:border-gray-400'
-        } ${isDarkSurface ? 'bg-[#191715]' : 'bg-gray-50'}`}
+        } ${darkSurface ? 'bg-[#191715]' : 'bg-gray-50'}`}
       >
         {isBusy && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg">
@@ -269,16 +308,16 @@ function AssetDropZone({ def, previewUrl, isBusy, onFile, onRemove }: AssetDropZ
           </div>
         )}
         {previewUrl ? (
-          <img src={previewUrl} alt={def.label} className="max-h-24 max-w-[90%] object-contain" />
+          <img src={previewUrl} alt={label} className="max-h-24 max-w-[90%] object-contain" />
         ) : (
-          <div className={`flex flex-col items-center gap-1 text-xs ${isDarkSurface ? 'text-gray-300' : 'text-gray-500'}`}>
+          <div className={`flex flex-col items-center gap-1 text-xs ${darkSurface ? 'text-gray-300' : 'text-gray-500'}`}>
             <Upload className="w-5 h-5" />
             <span>Drop a file or click to browse</span>
-            <span className="text-[10px] opacity-75">PNG, JPG or SVG, max 2 MB</span>
+            <span className="text-[10px] opacity-75">PNG, JPG or SVG, max {maxMb} MB</span>
           </div>
         )}
       </div>
-      <p className="text-xs text-gray-500 mt-1">{def.hint}</p>
+      <p className="text-xs text-gray-500 mt-1">{hint}</p>
       <input
         ref={inputRef}
         type="file"
@@ -627,11 +666,18 @@ export default function BrandKitSettings() {
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => JSON.stringify(formFromKit(null)));
   const [hasHydrated, setHasHydrated] = useState<boolean>(false);
   const [busyAsset, setBusyAsset] = useState<BrandAssetKind | null>(null);
-  const [assetUrls, setAssetUrls] = useState<Record<BrandAssetKind, string | null>>({
+  const [assetUrls, setAssetUrls] = useState<{
+    logo_light: string | null;
+    logo_dark: string | null;
+    cover_image: string | null;
+  }>({
     logo_light: null,
     logo_dark: null,
     cover_image: null,
   });
+  const [textureUrl, setTextureUrl] = useState<string | null>(null);
+  const [sectionUrls, setSectionUrls] = useState<Record<string, string | null>>({});
+  const [sectionsOpen, setSectionsOpen] = useState<boolean>(false);
 
   // Hydrate the form once the kit (or its absence) is known. Re-hydrate when
   // the kit's updated_at changes so a save elsewhere is reflected.
@@ -670,6 +716,36 @@ export default function BrandKitSettings() {
       cancelled = true;
     };
   }, [logoLightPath, logoDarkPath, coverPath, getAssetUrl]);
+
+  // Resolve the deck-imagery URLs (texture + section heroes) when they change.
+  const texturePath = brandKit?.texture_image_path ?? null;
+  const sectionImages = brandKit?.section_images ?? {};
+  const sectionImagesKey = JSON.stringify(sectionImages);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const url = await getAssetUrl(texturePath);
+      if (!cancelled) setTextureUrl(url);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [texturePath, getAssetUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const map = JSON.parse(sectionImagesKey) as Record<string, string>;
+      const entries = await Promise.all(
+        DECK_SECTION_KEYS.map(async (key) => [key, await getAssetUrl(map[key] ?? null)] as const)
+      );
+      if (!cancelled) setSectionUrls(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sectionImagesKey, getAssetUrl]);
 
   const isDirty = useMemo(() => JSON.stringify(form) !== savedSnapshot, [form, savedSnapshot]);
   const daypartValidation = useMemo(() => validateDayparts(form.dayparts), [form.dayparts]);
@@ -723,8 +799,21 @@ export default function BrandKitSettings() {
     setForm(JSON.parse(savedSnapshot) as BrandKitForm);
   };
 
+  const assetKindLabel = (kind: BrandAssetKind): string => {
+    if (kind === 'texture') return 'Texture';
+    if (kind.startsWith('section:')) {
+      const key = kind.slice('section:'.length) as DeckSectionKey;
+      return `${SECTION_IMAGE_LABELS[key] ?? key} image`;
+    }
+    return ASSET_FIELDS.find((a) => a.kind === kind)?.label ?? 'Asset';
+  };
+
+  const isImageryKind = (kind: BrandAssetKind): boolean =>
+    kind === 'texture' || kind.startsWith('section:');
+
   const handleAssetFile = async (kind: BrandAssetKind, file: File): Promise<void> => {
-    const validationError = validateBrandAsset(file);
+    const maxBytes = (isImageryKind(kind) ? IMAGERY_MAX_MB : 2) * 1024 * 1024;
+    const validationError = validateBrandAsset(file, maxBytes);
     if (validationError) {
       addToast('error', validationError);
       return;
@@ -733,7 +822,7 @@ export default function BrandKitSettings() {
     const result = await uploadAsset(file, kind);
     setBusyAsset(null);
     if (result.success) {
-      addToast('success', `${ASSET_FIELDS.find((a) => a.kind === kind)?.label ?? 'Asset'} uploaded.`);
+      addToast('success', `${assetKindLabel(kind)} uploaded.`);
     } else {
       addToast('error', result.error ?? 'Upload failed.');
     }
@@ -744,7 +833,7 @@ export default function BrandKitSettings() {
     const result = await removeAsset(kind);
     setBusyAsset(null);
     if (result.success) {
-      addToast('info', `${ASSET_FIELDS.find((a) => a.kind === kind)?.label ?? 'Asset'} removed.`);
+      addToast('info', `${assetKindLabel(kind)} removed.`);
     } else {
       addToast('error', result.error ?? 'Failed to remove asset.');
     }
@@ -916,13 +1005,71 @@ export default function BrandKitSettings() {
                   {ASSET_FIELDS.map((def) => (
                     <AssetDropZone
                       key={def.kind}
-                      def={def}
-                      previewUrl={assetUrls[def.kind]}
+                      label={def.label}
+                      hint={def.hint}
+                      darkSurface={def.kind === 'logo_light'}
+                      previewUrl={assetUrls[def.kind as 'logo_light' | 'logo_dark' | 'cover_image']}
                       isBusy={busyAsset === def.kind}
                       onFile={(file) => void handleAssetFile(def.kind, file)}
                       onRemove={() => void handleAssetRemove(def.kind)}
                     />
                   ))}
+                </div>
+              </section>
+
+              <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Deck imagery</h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    The branded panels behind section titles. Uploads are saved immediately.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <AssetDropZone
+                    label="Texture / pattern"
+                    hint="Used as the branded panel behind section titles. Leave blank to use a solid colour panel in your primary colour."
+                    maxMb={IMAGERY_MAX_MB}
+                    previewUrl={textureUrl}
+                    isBusy={busyAsset === 'texture'}
+                    onFile={(file) => void handleAssetFile('texture', file)}
+                    onRemove={() => void handleAssetRemove('texture')}
+                  />
+                </div>
+
+                <div className="border-t border-gray-100 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setSectionsOpen((v) => !v)}
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                    aria-expanded={sectionsOpen}
+                  >
+                    {sectionsOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    Section images (optional)
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Optional hero image for each section panel. Any left blank fall back to the texture, then to a
+                    solid colour panel.
+                  </p>
+                  {sectionsOpen && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                      {DECK_SECTION_KEYS.map((key) => {
+                        const kind: BrandAssetKind = `section:${key}`;
+                        return (
+                          <AssetDropZone
+                            key={key}
+                            label={SECTION_IMAGE_LABELS[key]}
+                            hint={`Hero image for the ${SECTION_IMAGE_LABELS[key].toLowerCase()} section.`}
+                            maxMb={IMAGERY_MAX_MB}
+                            previewUrl={sectionUrls[key] ?? null}
+                            isBusy={busyAsset === kind}
+                            onFile={(file) => void handleAssetFile(kind, file)}
+                            onRemove={() => void handleAssetRemove(kind)}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </section>
 

@@ -120,6 +120,19 @@ export interface BrandKit {
   logo_light_path: string | null;
   logo_dark_path: string | null;
   cover_image_path: string | null;
+  /**
+   * Object key in 'brand-assets' for the branded pattern/texture drawn behind
+   * a section title when that section has no dedicated hero image. Null falls
+   * back to a solid primary-colour panel.
+   */
+  texture_image_path?: string | null;
+  /**
+   * Map of deck section key (see DECK_SECTION_KEYS) -> object key in
+   * 'brand-assets' for an optional hero image behind that section's title. A
+   * section absent from the map falls back to the texture, then to a solid
+   * colour panel.
+   */
+  section_images: Record<string, string>;
   dayparts: Daypart[];
   /** Report voice: a short description of the desired narrative tone. */
   tone_description: string | null;
@@ -129,12 +142,40 @@ export interface BrandKit {
   updated_at: string;
 }
 
+/**
+ * The deck sections that can carry a branded hero image, in slide order. Keys
+ * are stable and match the generator's section panels.
+ */
+export const DECK_SECTION_KEYS = [
+  'cover',
+  'overview',
+  'broadcast',
+  'reconciliation',
+  'streaming',
+  'podcast',
+  'social',
+  'integration',
+  'audience',
+  'closing',
+] as const;
+
+export type DeckSectionKey = (typeof DECK_SECTION_KEYS)[number];
+
 /** The user-editable subset of a brand kit (everything the settings form saves). */
 export type BrandKitInput = Partial<
   Omit<BrandKit, 'id' | 'agency_id' | 'created_at' | 'updated_at'>
 >;
 
-export type BrandAssetKind = 'logo_light' | 'logo_dark' | 'cover_image';
+/**
+ * A brand-kit asset slot. The fixed logo/cover slots, the deck texture, and a
+ * per-section hero image addressed as `section:<key>` (e.g. `section:cover`).
+ */
+export type BrandAssetKind =
+  | 'logo_light'
+  | 'logo_dark'
+  | 'cover_image'
+  | 'texture'
+  | `section:${DeckSectionKey}`;
 
 // ------------------------------------------------------------
 // pcr_reports
@@ -227,6 +268,8 @@ export const DEFAULT_BRAND_KIT: Omit<BrandKit, 'id' | 'agency_id' | 'created_at'
   logo_light_path: null,
   logo_dark_path: null,
   cover_image_path: null,
+  texture_image_path: null,
+  section_images: {},
   dayparts: DEFAULT_DAYPARTS,
   tone_description: null,
   tone_reference: null,

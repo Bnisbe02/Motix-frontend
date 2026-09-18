@@ -249,7 +249,11 @@ export default function StepReview({ report, onBack, onExported }: StepReviewPro
       // Persist the edited narrative first so export uses the saved copy.
       await saveNarrative();
       const resolver = makeAssetResolver();
-      const blob = await generatePptx(model, brandKit, { narrative: currentNarrative(), assetResolver: resolver });
+      const blob = await generatePptx(model, brandKit, {
+        narrative: currentNarrative(),
+        assetResolver: resolver,
+        clientLogoPath: report.client_logo_path,
+      });
       downloadBlob(blob, `${baseName}.pptx`);
       const updated = await updateReport(report.id, { status: 'exported' });
       onExported?.(updated);
@@ -266,7 +270,11 @@ export default function StepReview({ report, onBack, onExported }: StepReviewPro
     try {
       await saveNarrative();
       const resolver = makeAssetResolver();
-      const blob = await generatePdf(model, brandKit, { narrative: currentNarrative(), assetResolver: resolver });
+      const blob = await generatePdf(model, brandKit, {
+        narrative: currentNarrative(),
+        assetResolver: resolver,
+        clientLogoPath: report.client_logo_path,
+      });
       downloadBlob(blob, `${baseName}.pdf`);
       const updated = await updateReport(report.id, { status: 'exported' });
       onExported?.(updated);

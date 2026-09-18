@@ -191,6 +191,41 @@ export async function uploadPcrAsset(input: UploadPcrAssetInput): Promise<PcrAss
   return orThrow(data, error, 'Failed to record asset');
 }
 
+/**
+ * Upload a per-report client logo to a fixed path in pcr-assets:
+ *   <agency_id>/<report_id>/client-logo.<ext>
+ * Upsert so re-uploading replaces the object in place. Unlike uploadPcrAsset
+ * this does NOT create a versioned pcr_assets row — the path is stored directly
+ * on pcr_reports.client_logo_path by the caller. The path MUST start with the
+ * agency id so storage RLS on pcr-assets passes. Returns the stored path.
+ */
+export async function uploadClientLogo(input: {
+  file: File;
+  reportId: string;
+  agencyId: string;
+}): Promise<string> {
+  const { file, reportId, agencyId } = input;
+  const dot = file.name.lastIndexOf('.');
+  const rawExt = dot === -1 ? '' : file.name.slice(dot + 1).toLowerCase();
+  const ext = rawExt === 'jpeg' ? 'jpg' : rawExt || 'png';
+  const path = `${agencyId}/${reportId}/client-logo.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(PCR_ASSETS_BUCKET)
+    .upload(path, file, { upsert: true, cacheControl: '0', contentType: file.type || undefined });
+  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+  return path;
+}
+
+/** Best-effort deletion of a pcr-assets object (e.g. a removed client logo). */
+export async function removePcrAsset(path: string): Promise<void> {
+  try {
+    await supabase.storage.from(PCR_ASSETS_BUCKET).remove([path]);
+  } catch {
+    /* an orphaned object is harmless and is overwritten by the next upload */
+  }
+}
+
 export async function createSignedUrl(path: string, bucket: string = PCR_ASSETS_BUCKET): Promise<string | null> {
   try {
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL);

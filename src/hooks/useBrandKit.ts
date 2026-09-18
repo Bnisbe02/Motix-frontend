@@ -9,6 +9,16 @@ import {
 } from '../types/pcr';
 
 /*
+  Brand kit hook (continued).
+
+  Asset slots. The three fixed logo/cover slots map to their own columns and
+  keep the original 2 MB limit. Two new Phase 4 slots carry the deck imagery:
+  `texture` (one per kit, saved to texture_image_path) and `section:<key>` (a
+  per-section hero image merged into the section_images map). These allow up to
+  5 MB because a full-bleed panel image is legitimately larger than a logo.
+*/
+
+/*
   Brand kit hook.
 
   - Reads the agency id from the JWT app_metadata.agency_id claim (via
@@ -22,8 +32,31 @@ import {
     object and the hook surfaces `error` as state.
 */
 
-const MAX_ASSET_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_ASSET_BYTES = 2 * 1024 * 1024; // 2 MB — logos and cover image
+const MAX_IMAGERY_BYTES = 5 * 1024 * 1024; // 5 MB — texture and section heroes
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
+
+/** True for the larger deck-imagery slots (texture, section:<key>). */
+function isImageryKind(kind: BrandAssetKind): boolean {
+  return kind === 'texture' || kind.startsWith('section:');
+}
+
+/** The section key of a `section:<key>` kind, or null for any other kind. */
+function sectionKeyOf(kind: BrandAssetKind): string | null {
+  return kind.startsWith('section:') ? kind.slice('section:'.length) : null;
+}
+
+/** Byte ceiling for a slot: 5 MB for deck imagery, 2 MB otherwise. */
+function maxBytesForKind(kind: BrandAssetKind): number {
+  return isImageryKind(kind) ? MAX_IMAGERY_BYTES : MAX_ASSET_BYTES;
+}
+
+/** Storage object key (relative to the agency folder) for a slot. */
+function storageBaseName(kind: BrandAssetKind): string {
+  const sectionKey = sectionKeyOf(kind);
+  if (sectionKey !== null) return `section-${sectionKey}`;
+  return kind; // logo_light | logo_dark | cover_image | texture
+}
 
 const ALLOWED_ASSET_TYPES: Record<string, string> = {
   'image/png': 'png',
@@ -38,11 +71,18 @@ const ALLOWED_EXTENSIONS: Record<string, string> = {
   svg: 'svg',
 };
 
-const KIND_TO_COLUMN: Record<BrandAssetKind, 'logo_light_path' | 'logo_dark_path' | 'cover_image_path'> = {
+type FixedAssetKind = 'logo_light' | 'logo_dark' | 'cover_image';
+
+const KIND_TO_COLUMN: Record<FixedAssetKind, 'logo_light_path' | 'logo_dark_path' | 'cover_image_path'> = {
   logo_light: 'logo_light_path',
   logo_dark: 'logo_dark_path',
   cover_image: 'cover_image_path',
 };
+
+/** True for the three fixed logo/cover slots that map to their own column. */
+function isFixedKind(kind: BrandAssetKind): kind is FixedAssetKind {
+  return kind === 'logo_light' || kind === 'logo_dark' || kind === 'cover_image';
+}
 
 export interface SaveResult {
   success: boolean;
@@ -83,13 +123,17 @@ export function resolveAssetExtension(file: File): string | null {
   return ALLOWED_EXTENSIONS[ext] ?? null;
 }
 
-/** Validate an asset before upload. Returns an error message or null when OK. */
-export function validateBrandAsset(file: File): string | null {
+/**
+ * Validate an asset before upload. Returns an error message or null when OK.
+ * `maxBytes` defaults to the 2 MB logo/cover limit; deck imagery passes 5 MB.
+ */
+export function validateBrandAsset(file: File, maxBytes: number = MAX_ASSET_BYTES): string | null {
   if (resolveAssetExtension(file) === null) {
     return 'Only PNG, JPG or SVG files are accepted.';
   }
-  if (file.size > MAX_ASSET_BYTES) {
-    return 'File is too large. Maximum size is 2 MB.';
+  if (file.size > maxBytes) {
+    const mb = Math.round(maxBytes / (1024 * 1024));
+    return `File is too large. Maximum size is ${mb} MB.`;
   }
   return null;
 }
@@ -198,14 +242,14 @@ export function useBrandKit(): UseBrandKitResult {
         return { success: false, error: message };
       }
 
-      const validationError = validateBrandAsset(file);
+      const validationError = validateBrandAsset(file, maxBytesForKind(kind));
       if (validationError) {
         return { success: false, error: validationError };
       }
 
       const ext = resolveAssetExtension(file) as string;
       // Path MUST start with the agency id — storage RLS checks the first folder segment.
-      const path = `${agencyId}/${kind}.${ext}`;
+      const path = `${agencyId}/${storageBaseName(kind)}.${ext}`;
 
       setIsSaving(true);
       try {
@@ -229,25 +273,53 @@ export function useBrandKit(): UseBrandKitResult {
         setIsSaving(false);
       }
 
-      const saved = await save({ [KIND_TO_COLUMN[kind]]: path });
+      // Persist the new path to its slot. Section heroes merge into the map so
+      // uploading one section never clobbers the others.
+      const sectionKey = sectionKeyOf(kind);
+      let patch: BrandKitInput;
+      if (sectionKey !== null) {
+        patch = { section_images: { ...(brandKit?.section_images ?? {}), [sectionKey]: path } };
+      } else if (isFixedKind(kind)) {
+        patch = { [KIND_TO_COLUMN[kind]]: path };
+      } else {
+        patch = { texture_image_path: path };
+      }
+
+      const saved = await save(patch);
       if (!saved.success) {
         return { success: false, error: saved.error };
       }
 
       return { success: true, path };
     },
-    [agencyId, save]
+    [agencyId, brandKit, save]
   );
 
   const removeAsset = useCallback(
     async (kind: BrandAssetKind): Promise<SaveResult> => {
-      const column = KIND_TO_COLUMN[kind];
-      const currentPath = brandKit?.[column] ?? null;
+      // Resolve the current path and the patch that clears this slot. Section
+      // heroes drop only their own key from the map, leaving siblings intact.
+      const sectionKey = sectionKeyOf(kind);
+      let currentPath: string | null;
+      let patch: BrandKitInput;
+      if (sectionKey !== null) {
+        const nextMap = { ...(brandKit?.section_images ?? {}) };
+        currentPath = nextMap[sectionKey] ?? null;
+        delete nextMap[sectionKey];
+        patch = { section_images: nextMap };
+      } else if (isFixedKind(kind)) {
+        const column = KIND_TO_COLUMN[kind];
+        currentPath = brandKit?.[column] ?? null;
+        patch = { [column]: null };
+      } else {
+        currentPath = brandKit?.texture_image_path ?? null;
+        patch = { texture_image_path: null };
+      }
 
       // Clear the database path first: if this fails the object is still
       // there and the kit still points at it, so nothing is lost. Only once
       // the DB no longer references the object do we delete it.
-      const saved = await save({ [column]: null });
+      const saved = await save(patch);
       if (!saved.success) {
         return saved;
       }

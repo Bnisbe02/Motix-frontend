@@ -200,8 +200,10 @@ export default function ReportBuilder() {
                 <StepCampaign
                   report={report}
                   saving={saving}
+                  agencyId={agencyId}
                   onSubmit={(d) => void handleCampaignSubmit(d)}
                   onAutosave={(d) => void handleAutosave(d)}
+                  onReportChange={(updated) => setReport(updated)}
                 />
               )}
               {step === 2 && report && agencyId && (

@@ -77,12 +77,13 @@ export async function generatePdf(
   const kit = brandKit;
   const sectionPaths = kit?.section_images ?? {};
   const sk = (k: string): string | undefined => sectionPaths[k];
-  const [logoLight, logoDark, clientLogo, texture, secOverview, secBroadcast, secRecon, secStreaming, secPodcast, secSocial, secIntegration, secAudience, secClosing] =
+  const [logoLight, logoDark, clientLogo, texture, secCover, secOverview, secBroadcast, secRecon, secStreaming, secPodcast, secSocial, secIntegration, secAudience, secClosing] =
     await Promise.all([
       resolveImage(opts.assetResolver, kit?.logo_light_path),
       resolveImage(opts.assetResolver, kit?.logo_dark_path),
       resolveImage(opts.assetResolver, opts.clientLogoPath),
       resolveImage(opts.assetResolver, kit?.texture_image_path),
+      resolveImage(opts.assetResolver, sk('cover')),
       resolveImage(opts.assetResolver, sk('overview')),
       resolveImage(opts.assetResolver, sk('broadcast')),
       resolveImage(opts.assetResolver, sk('reconciliation')),
@@ -94,6 +95,7 @@ export async function generatePdf(
       resolveImage(opts.assetResolver, sk('closing')),
     ]);
   const sectionImage: Record<string, string | null> = {
+    cover: secCover,
     overview: secOverview,
     broadcast: secBroadcast,
     reconciliation: secRecon,
@@ -321,8 +323,27 @@ export async function generatePdf(
   // Cover
   // =========================================================
   const coverBandH = 200;
-  setFill(primary);
-  doc.rect(0, 0, pageW, coverBandH, 'F');
+  // Cover panel field: configured cover image → texture → solid primary, matching
+  // the PPTX cover fallback. A primary scrim over the image keeps the title legible.
+  const coverImg = sectionImage.cover ?? texture ?? null;
+  let coverImageDrawn = false;
+  if (coverImg) {
+    try {
+      doc.addImage(coverImg, 0, 0, pageW, coverBandH, undefined, 'FAST');
+      coverImageDrawn = true;
+    } catch {
+      /* fall through to the solid field */
+    }
+  }
+  if (coverImageDrawn) {
+    withOpacity(0.82, () => {
+      setFill(primary);
+      doc.rect(0, 0, pageW, coverBandH, 'F');
+    });
+  } else {
+    setFill(primary);
+    doc.rect(0, 0, pageW, coverBandH, 'F');
+  }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(26);
   setText(onPrimary);

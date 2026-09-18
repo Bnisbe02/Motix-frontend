@@ -162,7 +162,7 @@ function totalCell(ts: TableStyle, text: string, align: 'left' | 'right' | 'cent
   return cell(text, { bold: true, color: ts.totalColor, fill: ts.totalFill, align });
 }
 
-function tableProps(ts: TableStyle, rect: Rect): PptxGenJS.TableProps {
+function tableProps(ts: TableStyle, rect: Rect, rowH?: number): PptxGenJS.TableProps {
   return {
     x: rect.x,
     y: rect.y,
@@ -171,6 +171,9 @@ function tableProps(ts: TableStyle, rect: Rect): PptxGenJS.TableProps {
     fontSize: ts.bodyFontSize,
     border: ts.border,
     valign: 'middle',
+    // A fixed row height makes a table's rendered height deterministic, so
+    // callers can stack tables without the auto-fit height colliding.
+    ...(rowH ? { rowH } : {}),
   };
 }
 
@@ -505,45 +508,59 @@ export async function buildPptx(
       bodyTop += theme.geom.kpi.h + 0.4;
     }
 
-    // Supporting metric table (metrics not already shown as cards).
+    // Resolve any screenshot up front so the chart can reserve space for it and
+    // never place the image over the exported chart.
+    const shotUrl = await resolveImage(opts.assetResolver, line.screenshotPaths[0]);
+    const shotW = 1.7;
+    const shotH = 1.7;
+    const panelBottom = content.y + content.h;
+
+    // Left column: the supporting metric table and the state split stack with
+    // deterministic heights (fixed row height) so neither clips the other.
+    const SIDE_ROW_H = 0.3;
+    const leftW = Math.min(4.0, content.w * 0.5);
+    let leftY = bodyTop;
     const remaining = Object.entries(line.metrics).filter(([k]) => !usedKeys.has(k));
-    const tableW = Math.min(4.0, content.w * 0.5);
     if (remaining.length > 0) {
       const rows = [
         [headerCell(ts, 'Metric'), headerCell(ts, 'Value', 'right')],
         ...remaining.map(([k, v], i) => [bodyCell(ts, prettyKey(k), i), bodyCell(ts, v.toLocaleString('en-AU'), i, 'right')]),
       ];
-      slide.addTable(rows, tableProps(ts, { x: content.x, y: bodyTop, w: tableW, h: 0 }));
+      slide.addTable(rows, tableProps(ts, { x: content.x, y: leftY, w: leftW, h: 0 }, SIDE_ROW_H));
+      leftY += (remaining.length + 1) * SIDE_ROW_H + 0.3;
     }
-
-    // Supporting chart: placements or per-post breakdown.
-    const chartX = remaining.length > 0 ? content.x + tableW + 0.4 : content.x;
-    const chartW = content.x + content.w - chartX;
-    const chartH = content.y + content.h - bodyTop - 0.2;
-    if (line.placements.length > 0) {
-      slide.addChart(pptx.ChartType.bar, [{ name: 'Impressions', labels: line.placements.map((p) => p.name), values: line.placements.map((p) => p.impressions) }], {
-        x: chartX, y: bodyTop, w: chartW, h: chartH, barDir: 'bar', chartColors: [theme.colors.primary], showLegend: false,
-        catAxisLabelFontFace: theme.fonts.body, valAxisLabelFontFace: theme.fonts.body,
-      });
-    } else if (line.perPost.length > 0) {
-      slide.addChart(pptx.ChartType.bar, [{ name: 'Reach', labels: line.perPost.map((p) => p.label), values: line.perPost.map((p) => p.reach) }], {
-        x: chartX, y: bodyTop, w: chartW, h: chartH, barDir: 'bar', chartColors: [theme.colors.accent], showLegend: false,
-        catAxisLabelFontFace: theme.fonts.body, valAxisLabelFontFace: theme.fonts.body,
-      });
-    } else if (line.stateSplit.length > 0) {
+    // A line may carry a state split AND a placements/per-post chart, so the
+    // state split is its own rendering path — never an `else` of the chart.
+    if (line.stateSplit.length > 0) {
       const rows = [
         [headerCell(ts, 'State'), headerCell(ts, '%', 'right')],
         ...line.stateSplit.map((sp, i) => [bodyCell(ts, sp.state, i), bodyCell(ts, `${sp.percent}%`, i, 'right')]),
       ];
-      slide.addTable(rows, tableProps(ts, { x: chartX, y: bodyTop, w: Math.min(3.0, chartW), h: 0 }));
+      slide.addTable(rows, tableProps(ts, { x: content.x, y: leftY, w: Math.min(3.0, leftW), h: 0 }, SIDE_ROW_H));
+      leftY += (line.stateSplit.length + 1) * SIDE_ROW_H + 0.3;
     }
 
-    // Screenshot, if attached and resolvable.
-    const shotUrl = await resolveImage(opts.assetResolver, line.screenshotPaths[0]);
+    // Right column: placements / per-post chart. Its bottom stops above the
+    // reserved screenshot slot, so an attached screenshot never obscures it.
+    const hasLeft = remaining.length > 0 || line.stateSplit.length > 0;
+    const chartX = hasLeft ? content.x + leftW + 0.4 : content.x;
+    const chartW = content.x + content.w - chartX;
+    const chartH = panelBottom - bodyTop - 0.2 - (shotUrl ? shotH + 0.25 : 0);
+    if (chartH > 0.8 && line.placements.length > 0) {
+      slide.addChart(pptx.ChartType.bar, [{ name: 'Impressions', labels: line.placements.map((p) => p.name), values: line.placements.map((p) => p.impressions) }], {
+        x: chartX, y: bodyTop, w: chartW, h: chartH, barDir: 'bar', chartColors: [theme.colors.primary], showLegend: false,
+        catAxisLabelFontFace: theme.fonts.body, valAxisLabelFontFace: theme.fonts.body,
+      });
+    } else if (chartH > 0.8 && line.perPost.length > 0) {
+      slide.addChart(pptx.ChartType.bar, [{ name: 'Reach', labels: line.perPost.map((p) => p.label), values: line.perPost.map((p) => p.reach) }], {
+        x: chartX, y: bodyTop, w: chartW, h: chartH, barDir: 'bar', chartColors: [theme.colors.accent], showLegend: false,
+        catAxisLabelFontFace: theme.fonts.body, valAxisLabelFontFace: theme.fonts.body,
+      });
+    }
+
+    // Screenshot, if attached and resolvable — its own reserved slot, bottom-right.
     if (shotUrl) {
-      const sw = 1.7;
-      const sh = 1.7;
-      slide.addImage({ ...imageProp(shotUrl), x: content.x + content.w - sw, y: content.y + content.h - sh, w: sw, h: sh, sizing: { type: 'contain', w: sw, h: sh } });
+      slide.addImage({ ...imageProp(shotUrl), x: content.x + content.w - shotW, y: panelBottom - shotH, w: shotW, h: shotH, sizing: { type: 'contain', w: shotW, h: shotH } });
     }
   }
 
